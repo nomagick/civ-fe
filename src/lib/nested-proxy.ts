@@ -1,22 +1,5 @@
 import { isPrimitiveLike } from "../lib/lang";
-
-
-interface PatchedProxyHandler<T extends object> {
-    getPrototypeOf?(target: T, ): object | null;
-    setPrototypeOf?(target: T, v: any): boolean;
-    isExtensible?(target: T): boolean;
-    preventExtensions?(target: T): boolean;
-    getOwnPropertyDescriptor?(target: T, p: PropertyKey): PropertyDescriptor | undefined;
-    has?(target: T, p: PropertyKey): boolean;
-    get?(target: T, p: PropertyKey, receiver: any): any;
-    set?(target: T, p: PropertyKey, value: any, receiver: any): boolean | void;
-    deleteProperty?(target: T, p: PropertyKey): boolean;
-    defineProperty?(target: T, p: PropertyKey, attributes: PropertyDescriptor): boolean;
-    enumerate?(target: T): PropertyKey[];
-    ownKeys?(target: T): PropertyKey[];
-    apply?(target: T, thisArg: any, argArray?: any): any;
-    construct?(target: T, argArray: any, newTarget?: any): object;
-}
+import { EventEmitter } from "./event-emitter";
 
 function isObject(obj: any) {
     if ((typeof obj) === 'object' && obj !== null) {
@@ -29,12 +12,113 @@ function isObject(obj: any) {
     return false;
 }
 
+export class ReactiveHost<T extends object> extends EventEmitter {
+    proxy!: T;
+    target: T;
+    handlers: ProxyHandler<T>;
+
+    managedProxyMap = new WeakMap<any, any>();
+
+    constructor(target: T, handlers: ProxyHandler<T> = {}) {
+        super();
+        this.target = target;
+        this.handlers = {
+            ...handlers,
+            get: (tgt, p, receiver) => {
+                const val: any = Reflect.get(tgt, p, receiver);
+
+                const cached = this.managedProxyMap.get(val);
+                if (cached) {
+                    this.emit('access', tgt, p, val);
+                    return cached;
+                }
+
+                if (!isObject(val) || isPrimitiveLike(val)) {
+                    this.emit('access', tgt, p, val);
+                    return val;
+                }
+
+                if (typeof p === "symbol") {
+                    this.emit('access', tgt, p, val);
+                    return val;
+                }
+
+                const wrapped = this.wrap(val);
+                this.emit('access', tgt, p, val);
+
+                return wrapped;
+            },
+
+            set: (tgt, p, value, receiver) => {
+                const oldVal = Reflect.get(tgt, p, receiver);
+
+                const r = Reflect.set(tgt, p, value, receiver);
+                if (typeof p === 'string' && r) {
+                    this.emit('assign', tgt, p, value, oldVal);
+                }
+
+                return r;
+            },
+            deleteProperty: (tgt, p) => {
+                const oldVal = Reflect.get(tgt, p);
+                const r = Reflect.deleteProperty(tgt, p);
+                if (r) {
+                    this.emit('delete', tgt, p, oldVal);
+                }
+
+                return r;
+            },
+            defineProperty: (tgt, p, desc) => {
+                const oldVal = Reflect.get(tgt, p);
+                const r = Reflect.defineProperty(tgt, p, desc);
+                if (r) {
+                    this.emit('define', tgt, p, desc, oldVal);
+                }
+
+                return r;
+            }
+        };
+
+
+
+        if (handlers.get) {
+            const origHandler = handlers.get;
+            this.handlers.get = (tgt, p, receiver) => {
+                const val = origHandler.call(handlers, tgt, p, receiver);
+
+                const cached = this.managedProxyMap.get(val);
+                if (cached) {
+                    return cached;
+                }
+
+                if (!isObject(val) || isPrimitiveLike(val)) {
+                    return val;
+                }
+
+                if (typeof p === "symbol") {
+                    return val;
+                }
+
+                return this.wrap(tgt);
+            };
+        }
+
+        this.proxy = new Proxy(target, this.handlers);
+        this.managedProxyMap.set(target, this.proxy);
+    }
+
+    wrap<W extends object>(tgt: W): W {
+        // TODO: keep track of attachment graph
+        return tgt;
+    }
+
+
+}
+
 export function nestedProxy<T extends object>(
-    target: T, handlers: PatchedProxyHandler<T>, deproxySymbol: symbol = Symbol('Default NestedProxy Deproxy Symbol')
+    target: T = {} as any, handlers: ProxyHandler<T> = {}
 ) {
     const proxyMap = new WeakMap<object, any>();
-    const revocations = new Set<Function>();
-
     const modifiedHandlers: ProxyHandler<T> = {};
 
     function deproxy(obj: any): any {
