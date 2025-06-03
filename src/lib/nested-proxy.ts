@@ -15,9 +15,10 @@ function isObject(obj: any) {
 export class ReactiveHost<T extends object> extends EventEmitter {
     proxy!: T;
     target: T;
-    handlers: ProxyHandler<T>;
+    handlers: ProxyHandler<any>;
 
     managedProxyMap = new WeakMap<any, any>();
+    managedProxyRevMap = new WeakMap<any, any>();
 
     constructor(target: T, handlers: ProxyHandler<T> = {}) {
         super();
@@ -26,31 +27,30 @@ export class ReactiveHost<T extends object> extends EventEmitter {
             ...handlers,
             get: (tgt, p, receiver) => {
                 const val: any = Reflect.get(tgt, p, receiver);
+                this.emit('access', tgt, p, val);
 
                 const cached = this.managedProxyMap.get(val);
                 if (cached) {
-                    this.emit('access', tgt, p, val);
                     return cached;
                 }
 
                 if (!isObject(val) || isPrimitiveLike(val)) {
-                    this.emit('access', tgt, p, val);
                     return val;
                 }
 
                 if (typeof p === "symbol") {
-                    this.emit('access', tgt, p, val);
                     return val;
                 }
 
-                const wrapped = this.wrap(val);
-                this.emit('access', tgt, p, val);
-
-                return wrapped;
+                return this.wrap(val);
             },
 
-            set: (tgt, p, value, receiver) => {
+            set: (tgt, p, inputValue, receiver) => {
+                let value = inputValue;
                 const oldVal = Reflect.get(tgt, p, receiver);
+                if (this.managedProxyRevMap.has(value)) {
+                    value = this.managedProxyRevMap.get(value);
+                }
 
                 const r = Reflect.set(tgt, p, value, receiver);
                 if (typeof p === 'string' && r) {
@@ -70,6 +70,9 @@ export class ReactiveHost<T extends object> extends EventEmitter {
             },
             defineProperty: (tgt, p, desc) => {
                 const oldVal = Reflect.get(tgt, p);
+                if (desc.value && this.managedProxyRevMap.has(desc.value)) {
+                    desc.value = this.managedProxyRevMap.get(desc.value);
+                }
                 const r = Reflect.defineProperty(tgt, p, desc);
                 if (r) {
                     this.emit('define', tgt, p, desc, oldVal);
@@ -79,12 +82,12 @@ export class ReactiveHost<T extends object> extends EventEmitter {
             }
         };
 
-
-
         if (handlers.get) {
             const origHandler = handlers.get;
             this.handlers.get = (tgt, p, receiver) => {
                 const val = origHandler.call(handlers, tgt, p, receiver);
+
+                this.emit('access', tgt, p, val);
 
                 const cached = this.managedProxyMap.get(val);
                 if (cached) {
@@ -99,17 +102,69 @@ export class ReactiveHost<T extends object> extends EventEmitter {
                     return val;
                 }
 
-                return this.wrap(tgt);
+                return this.wrap(val);
+            };
+        }
+        if (handlers.set) {
+            const origHandler = handlers.set;
+            this.handlers.set = (tgt, p, inputValue, receiver) => {
+                const oldVal = Reflect.get(tgt, p, receiver);
+                let value = inputValue;
+                if (this.managedProxyRevMap.has(value)) {
+                    value = this.managedProxyRevMap.get(value);
+                }
+
+                const r = origHandler.call(handlers, tgt, p, value, receiver);
+                if (typeof p === 'string' && r) {
+                    this.emit('assign', tgt, p, value, oldVal);
+                }
+
+                return r;
+            };
+        }
+        if (handlers.deleteProperty) {
+            const origHandler = handlers.deleteProperty;
+            this.handlers.deleteProperty = (tgt, p) => {
+                const oldVal = Reflect.get(tgt, p);
+                const r = origHandler.call(handlers, tgt, p);
+                if (r) {
+                    this.emit('delete', tgt, p, oldVal);
+                }
+
+                return r;
+            };
+        }
+        if (handlers.defineProperty) {
+            const origHandler = handlers.defineProperty;
+            this.handlers.defineProperty = (tgt, p, desc) => {
+                const oldVal = Reflect.get(tgt, p);
+                if (desc.value && this.managedProxyRevMap.has(desc.value)) {
+                    desc.value = this.managedProxyRevMap.get(desc.value);
+                }
+                const r = origHandler.call(handlers, tgt, p, desc);
+                if (r) {
+                    this.emit('define', tgt, p, desc, oldVal);
+                }
+
+                return r;
             };
         }
 
         this.proxy = new Proxy(target, this.handlers);
         this.managedProxyMap.set(target, this.proxy);
+        this.managedProxyRevMap.set(this.proxy, target);
     }
 
     wrap<W extends object>(tgt: W): W {
-        // TODO: keep track of attachment graph
-        return tgt;
+        if (!tgt) {
+            return tgt;
+        }
+
+        const proxy = new Proxy(tgt, this.handlers);
+        this.managedProxyMap.set(tgt, proxy);
+        this.managedProxyRevMap.set(proxy, tgt);
+
+        return proxy;
     }
 
 

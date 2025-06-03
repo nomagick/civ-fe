@@ -66,8 +66,8 @@ export class EventEmitter extends EventTarget {
         }
         const customEvent = new CustomEvent(event, {
             detail: args,
-            cancelable: true,
-            bubbles: false
+            cancelable: false,
+            bubbles: true
         });
         return this.dispatchEvent(customEvent);
     }
