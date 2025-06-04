@@ -1,7 +1,8 @@
 
+export const EVENT_EMITTER_REVOKERS = Symbol('EventEmitterRevokers');
 
 export class EventEmitter extends EventTarget {
-    private __revokers = new Map<string, Map<Function, Set<AbortController>>>();
+    private [EVENT_EMITTER_REVOKERS] = new Map<string, Map<Function, Set<AbortController>>>();
 
     on(event: string, listener: (...args: any[]) => void): this {
         return this.addListener(event, listener);
@@ -18,11 +19,11 @@ export class EventEmitter extends EventTarget {
             listener.call(this, ...(customEvent.detail || []));
         };
 
-        if (!this.__revokers.has(event)) {
-            this.__revokers.set(event, new Map());
+        if (!this[EVENT_EMITTER_REVOKERS].has(event)) {
+            this[EVENT_EMITTER_REVOKERS].set(event, new Map());
         }
 
-        const eventListeners = this.__revokers.get(event)!;
+        const eventListeners = this[EVENT_EMITTER_REVOKERS].get(event)!;
         if (!eventListeners.has(listener)) {
             eventListeners.set(listener, new Set());
         }
@@ -37,7 +38,7 @@ export class EventEmitter extends EventTarget {
     }
 
     removeListener(event: string, listener: (...args: any[]) => void): this {
-        const eventListeners = this.__revokers.get(event);
+        const eventListeners = this[EVENT_EMITTER_REVOKERS].get(event);
 
         if (eventListeners?.has(listener)) {
             const controllers = eventListeners.get(listener)!;
@@ -53,7 +54,7 @@ export class EventEmitter extends EventTarget {
                 eventListeners.delete(listener);
 
                 if (eventListeners.size === 0) {
-                    this.__revokers.delete(event);
+                    this[EVENT_EMITTER_REVOKERS].delete(event);
                 }
             }
         }
@@ -61,7 +62,7 @@ export class EventEmitter extends EventTarget {
     }
 
     emit(event: string, ...args: any[]): boolean {
-        if (!this.__revokers.has(event)) {
+        if (!this[EVENT_EMITTER_REVOKERS].has(event)) {
             return false; // No listeners for this event
         }
         const customEvent = new CustomEvent(event, {
@@ -85,32 +86,32 @@ export class EventEmitter extends EventTarget {
 
     removeAllListeners(event?: string): this {
         if (event !== undefined) {
-            const eventListeners = this.__revokers.get(event);
+            const eventListeners = this[EVENT_EMITTER_REVOKERS].get(event);
             if (eventListeners) {
                 for (const controllers of eventListeners.values()) {
                     for (const controller of controllers) {
                         controller.abort();
                     }
                 }
-                this.__revokers.delete(event);
+                this[EVENT_EMITTER_REVOKERS].delete(event);
             }
             return this;
         }
 
-        for (const eventListeners of this.__revokers.values()) {
+        for (const eventListeners of this[EVENT_EMITTER_REVOKERS].values()) {
             for (const controllers of eventListeners.values()) {
                 for (const controller of controllers) {
                     controller.abort();
                 }
             }
         }
-        this.__revokers.clear();
+        this[EVENT_EMITTER_REVOKERS].clear();
 
         return this;
     }
 
     listenerCount(event: string): number {
-        const eventListeners = this.__revokers.get(event);
+        const eventListeners = this[EVENT_EMITTER_REVOKERS].get(event);
         if (!eventListeners) return 0;
 
         let count = 0;

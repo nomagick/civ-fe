@@ -50,3 +50,21 @@ export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>) {
     };
 }
 
+export function activateReactivity<T extends ReactivityHost>(target: T) {
+    if (!target.hasOwnProperty(REACTIVE_KIT)) {
+        target[REACTIVE_KIT] = new ReactiveKit(target);
+    }
+
+    if (!target.hasOwnProperty(REACTIVE_CFG)) {
+        target[REACTIVE_CFG] = Object.create(target[REACTIVE_CFG] || null);
+    }
+
+    for (const key of Object.keys(target[REACTIVE_CFG])) {
+        const config = target[REACTIVE_CFG][key];
+        if (config.initializers) {
+            for (const initializer of config.initializers) {
+                initializer.call(target);
+            }
+        }
+    }
+}
