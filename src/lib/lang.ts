@@ -1,5 +1,3 @@
-import _ from 'lodash';
-import { inspect } from 'util';
 
 export function isConstructor(f: any) {
     try {
@@ -12,9 +10,9 @@ export function isConstructor(f: any) {
 
 export const NATIVE_CLASS_PROTOTYPES = new Map();
 
-Object.getOwnPropertyNames(global).forEach((k) => {
+Object.getOwnPropertyNames(globalThis).forEach((k) => {
     try {
-        const v = Reflect.get(global, k);
+        const v = Reflect.get(globalThis, k);
         if (isConstructor(v)) {
             NATIVE_CLASS_PROTOTYPES.set(v.prototype, v);
         }
@@ -224,21 +222,6 @@ export function isPrimitiveLike(o: any, ...primitivePrototypeSets: Array<Set<obj
     return false;
 }
 
-export function stringifyErrorLike(err: Error | { [k: string]: any; } | string | null | undefined) {
-    if (!err) {
-        return 'null';
-    }
-
-    if (typeof err === 'string') {
-        return err;
-    }
-
-    if (err instanceof Error) {
-        return err.toString();
-    }
-
-    return inspect(err, { depth: 6 });
-}
 
 export function marshalErrorLike(err: Error | { [k: string]: any; } | string | null | undefined) {
     if (!(err instanceof Error)) {
@@ -257,14 +240,6 @@ export function marshalErrorLike(err: Error | { [k: string]: any; } | string | n
     }
 
     return r;
-}
-
-export function sortObjectKeys(input: object) {
-    return _(input).toPairs().sortBy(0).fromPairs().value();
-}
-
-export function reverseObjectKeys(input: object) {
-    return _(input).toPairs().reverse().fromPairs().value();
 }
 
 export function parseUrl(input: string) {
