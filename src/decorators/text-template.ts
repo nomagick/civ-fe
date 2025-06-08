@@ -4,8 +4,8 @@
 export const REACTIVE_TEMPLATE_HTML = Symbol('REACTIVE_TEMPLATE_HTML');
 export const REACTIVE_TEMPLATE_CSS = Symbol('REACTIVE_TEMPLATE_CSS');
 export interface ReactiveTemplateMixin {
-    [REACTIVE_TEMPLATE_HTML]: string;
-    [REACTIVE_TEMPLATE_CSS]: string;
+    [REACTIVE_TEMPLATE_HTML]?: string;
+    [REACTIVE_TEMPLATE_CSS]?: string;
 }
 
 export function HTML(text: string) {

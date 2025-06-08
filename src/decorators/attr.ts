@@ -4,8 +4,12 @@ const finalizationRegistry = new FinalizationRegistry((mutationObserver: Mutatio
     mutationObserver.disconnect();
 });
 
+export interface AttrMixin {
+    element: Element;
+}
+
 export function Attr(overrideName?: string) {
-    return function (target: Element, key: string | symbol, _descriptor?: PropertyDescriptor) {
+    return function (target: AttrMixin, key: string | symbol, _descriptor?: PropertyDescriptor) {
         if (typeof target === 'function') {
             throw new TypeError("Attr decorator is intended for class properties or methods, not for classes themselves.");
         }
@@ -20,11 +24,11 @@ export function Attr(overrideName?: string) {
             configurable: true,
             enumerable: true,
             writable: true,
-            get(this: Element) {
-                return this.getAttribute(attrName);
+            get(this: AttrMixin) {
+                return this.element.getAttribute(attrName);
             },
-            set(this: Element, value) {
-                return this.setAttribute(attrName, value);
+            set(this: AttrMixin, value) {
+                return this.element.setAttribute(attrName, value);
             }
         });
     };
@@ -32,14 +36,14 @@ export function Attr(overrideName?: string) {
 
 export const REACTIVE_ATTR_OBSERVER = Symbol('REACTIVE_ATTR_OBSERVER');
 export const REACTIVE_ATTR_MAPPING = Symbol('REACTIVE_ATTR_MAPPING');
-export interface ReactiveAttrMixin {
+export interface ReactiveAttrMixin extends AttrMixin {
     [REACTIVE_ATTR_OBSERVER]: MutationObserver;
     [REACTIVE_ATTR_MAPPING]: Record<string, Set<string>>;
 }
 
-export function ReactiveAttr<T extends ReactivityHost & Element>(overrideName?: string | ReactivityOpts<T>): (target: T, key: string, _descriptor?: PropertyDescriptor) => void;
-export function ReactiveAttr<T extends ReactivityHost & Element>(overrideName: string, config?: ReactivityOpts<T>): (target: T, key: string, _descriptor?: PropertyDescriptor) => void;
-export function ReactiveAttr<T extends ReactivityHost & Element>() {
+export function ReactiveAttr<T extends ReactivityHost>(overrideName?: string | ReactivityOpts<T>): (target: T, key: string, _descriptor?: PropertyDescriptor) => void;
+export function ReactiveAttr<T extends ReactivityHost>(overrideName: string, config?: ReactivityOpts<T>): (target: T, key: string, _descriptor?: PropertyDescriptor) => void;
+export function ReactiveAttr<T extends ReactivityHost>() {
     const [arg1, arg2] = arguments;
     let overrideName: string | undefined;
     let config: ReactivityOpts<T> | undefined;
@@ -75,7 +79,7 @@ export function ReactiveAttr<T extends ReactivityHost & Element>() {
                                 if (x.type === 'attributes') {
                                     const attrName = x.attributeName;
                                     if (attrName && this[REACTIVE_ATTR_MAPPING][attrName]) {
-                                        const v = this.getAttribute(attrName);
+                                        const v = this.element.getAttribute(attrName);
                                         for (const key of this[REACTIVE_ATTR_MAPPING][attrName]) {
                                             if (this.hasOwnProperty(key)) {
                                                 Reflect.set(this[REACTIVE_KIT], key, v);
@@ -85,7 +89,7 @@ export function ReactiveAttr<T extends ReactivityHost & Element>() {
                                 }
                             }
                         });
-                        this[REACTIVE_ATTR_OBSERVER].observe(this, {
+                        this[REACTIVE_ATTR_OBSERVER].observe(this.element, {
                             subtree: false,
                             attributes: true,
                             attributeFilter: Object.keys(this[REACTIVE_ATTR_MAPPING]),
