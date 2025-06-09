@@ -12,13 +12,15 @@ function isObject(obj: any) {
     return false;
 }
 
+const globalProxyRevMap = new WeakMap<any, any>();
 export class ReactiveKit<T extends object = any> extends EventEmitter {
     proxy!: T;
     target: T;
     protected handlers: ProxyHandler<any>;
 
     protected managedProxyMap = new WeakMap<any, any>();
-    protected managedProxyRevMap = new WeakMap<any, any>();
+
+    protected arrayOptimizationKit = this.getArrayOptimizationKit();
 
     constructor(target: T, handlers: ProxyHandler<T> = {}) {
         super();
@@ -32,6 +34,10 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
                 const cached = this.managedProxyMap.get(val);
                 if (cached) {
                     return cached;
+                }
+
+                if (Array.isArray(tgt) && (p in this.arrayOptimizationKit)) {
+                    return this.arrayOptimizationKit[p as keyof typeof this.arrayOptimizationKit];
                 }
 
                 if (!isObject(val) || isPrimitiveLike(val)) {
@@ -48,8 +54,8 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             set: (tgt, p, inputValue, receiver) => {
                 let value = inputValue;
                 const oldVal = Reflect.get(tgt, p, receiver);
-                if (this.managedProxyRevMap.has(value)) {
-                    value = this.managedProxyRevMap.get(value);
+                if (globalProxyRevMap.has(value)) {
+                    value = globalProxyRevMap.get(value);
                 }
 
                 const r = Reflect.set(tgt, p, value, receiver);
@@ -70,8 +76,8 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             },
             defineProperty: (tgt, p, desc) => {
                 const oldVal = Reflect.get(tgt, p);
-                if (desc.value && this.managedProxyRevMap.has(desc.value)) {
-                    desc.value = this.managedProxyRevMap.get(desc.value);
+                if (desc.value && globalProxyRevMap.has(desc.value)) {
+                    desc.value = globalProxyRevMap.get(desc.value);
                 }
                 const r = Reflect.defineProperty(tgt, p, desc);
                 if (r) {
@@ -110,8 +116,8 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             this.handlers.set = (tgt, p, inputValue, receiver) => {
                 const oldVal = Reflect.get(tgt, p, receiver);
                 let value = inputValue;
-                if (this.managedProxyRevMap.has(value)) {
-                    value = this.managedProxyRevMap.get(value);
+                if (globalProxyRevMap.has(value)) {
+                    value = globalProxyRevMap.get(value);
                 }
 
                 const r = origHandler.call(handlers, tgt, p, value, receiver);
@@ -138,8 +144,8 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             const origHandler = handlers.defineProperty;
             this.handlers.defineProperty = (tgt, p, desc) => {
                 const oldVal = Reflect.get(tgt, p);
-                if (desc.value && this.managedProxyRevMap.has(desc.value)) {
-                    desc.value = this.managedProxyRevMap.get(desc.value);
+                if (desc.value && globalProxyRevMap.has(desc.value)) {
+                    desc.value = globalProxyRevMap.get(desc.value);
                 }
                 const r = origHandler.call(handlers, tgt, p, desc);
                 if (r) {
@@ -151,8 +157,8 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
         }
 
         this.proxy = new Proxy(target, this.handlers);
+        globalProxyRevMap.set(this.proxy, target);
         this.managedProxyMap.set(target, this.proxy);
-        this.managedProxyRevMap.set(this.proxy, target);
     }
 
     wrap<W extends object>(tgt: W): W {
@@ -165,15 +171,50 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
 
         if (this.managedProxyMap.has(tgt)) {
             const proxy = this.managedProxyMap.get(tgt);
-            this.managedProxyRevMap.set(proxy, tgt);
+            globalProxyRevMap.set(proxy, tgt);
             return proxy;
         }
 
         const proxy = new Proxy(tgt, this.handlers);
+        globalProxyRevMap.set(proxy, tgt);
         this.managedProxyMap.set(tgt, proxy);
-        this.managedProxyRevMap.set(proxy, tgt);
 
         return proxy;
+    }
+
+    getArrayOptimizationKit() {
+        const methodsToPatch = ['pop', 'push', 'shift', 'unshift', 'splice', 'reverse'] as const;
+
+        const mangle = <T extends typeof methodsToPatch[number]>(method: T) => {
+            const original: Function = Array.prototype[method];
+            const rk = this;
+            const mangled = function (this: Array<any>, ...args: Parameters<unknown[][T]>): ReturnType<unknown[][T]> {
+                const origLength = this.length;
+                const result = original.apply(this, args);
+                rk.emit('array-op', method, this, ...args);
+                if (this.length !== origLength) {
+                    rk.emit('assign', this, 'length', this.length, origLength);
+                }
+                return result;
+            }
+
+            Object.defineProperty(mangled, 'name', {
+                value: method,
+                writable: false,
+                enumerable: false,
+                configurable: true
+            });
+
+            return mangled;
+        }
+        const arrayOptimizationKit: any = {};
+        for (const method of methodsToPatch) {
+            arrayOptimizationKit[method] = mangle(method);
+        }
+
+        return arrayOptimizationKit as {
+            [K in typeof methodsToPatch[number]]: (...args: Parameters<unknown[][K]>) => ReturnType<unknown[][K]>;
+        };
     }
 
 
