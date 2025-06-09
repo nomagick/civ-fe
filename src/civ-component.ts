@@ -1,8 +1,9 @@
 import { runOncePerClass } from "./decorators/once";
 import { REACTIVE_TEMPLATE_DOM, ReactiveTemplateMixin, identify } from "./decorators/dom-template";
 import { activateReactivity, initReactivity, ReactivityHost } from "./decorators/reactive";
-import { isMagicBindAttr, isMagicElifAttr, isMagicElseAttr, isMagicForAttr, isMagicForTemplateElement, isMagicHTMLAttr, isMagicIfAttr, isMagicPlainAttr, namespaceInjectionArgName, parseMagicAttr, parseMagicEventHandler, parseMagicProp, significantFlagClass } from "./protocol";
+import { attrToTrait, isMagicBindAttr, isMagicElifAttr, isMagicElseAttr, isMagicForAttr, isMagicForTemplateElement, isMagicHTMLAttr, isMagicIfAttr, isMagicPlainAttr, namespaceInjectionArgName, parseMagicAttr, parseMagicEventHandler, parseMagicProp, significantFlagClass } from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
+import { parseTemplate } from "utils/template-parser";
 
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin { }
 
@@ -49,13 +50,24 @@ export class CivComponent extends EventTarget {
             return NodeFilter.FILTER_ACCEPT;
         });
 
-        const expressionMap = new Map<string, (this: CivComponent) => unknown>();
-        const elemTraitsMap: Map<Node, string[][]> = new Map();
+        const expressionMap = (this.constructor as typeof CivComponent).expressionMap;
+        const elemTraitsMap: Map<Element, string[][]> = new Map();
 
         let elem: Element | Text = walker.currentNode as Element;
         do {
             if (elem instanceof Text) {
-                // TODO: handle text nodes with {{ }} expressions
+                const tpl = elem.textContent || '';
+                const parsed = parseTemplate(tpl);
+                if (!parsed.length || !parsed.some((x) => x.type === 'expression')) {
+                    continue;
+                }
+
+                const exprFn = new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}].join(''); } }`) as any;
+                expressionMap.set(tpl, exprFn);
+                const parentTraits = elemTraitsMap.get(elem.parentElement!) || [];
+                parentTraits.push(['tpl']);
+                elemTraitsMap.set(elem.parentElement!, parentTraits);
+
                 continue;
             }
             const elemTraits: string[][] = [];
@@ -69,40 +81,13 @@ export class CivComponent extends EventTarget {
                 const name = attr.localName;
                 const expr = attr.value.trim();
 
-                if (isMagicElseAttr(name)) {
-                    elemTraits.push(['else']);
-                    continue;
-                }
-                if (isMagicHTMLAttr(name)) {
-                    elemTraits.push(['html']);
-                    continue;
-                }
-                if (isMagicPlainAttr(name)) {
-                    elemTraits.push(['plain']);
-                    continue;
-                }
-                const parsedAttr = parseMagicAttr(name);
-                if (parsedAttr) {
-                    elemTraits.push(['attr', parsedAttr, expr]);
-                }
-                const parsedProp = parseMagicProp(name);
-                if (parsedProp) {
-                    elemTraits.push(['prop', parsedProp, expr]);
-                }
 
-                const parsedEvent = parseMagicEventHandler(name);
-                if (parsedEvent) {
-                    elemTraits.push(['event', parsedEvent, expr]);
+                const trait = attrToTrait(name, expr);
+                if (!trait) {
+                    continue;
                 }
-
-                if (isMagicIfAttr(name)) {
-                    elemTraits.push(['if', expr]);
-                }
-                if (isMagicElifAttr(name)) {
-                    elemTraits.push(['elif', expr]);
-                }
-                if (isMagicBindAttr(name)) {
-                    elemTraits.push(['bind', expr]);
+                if (trait.length === 1 || !trait.includes(expr)) {
+                    continue;
                 }
 
                 if (this.constructor.prototype.hasOwnProperty(expr)) {
@@ -135,7 +120,13 @@ export class CivComponent extends EventTarget {
             }
         } while (elem = walker.nextNode() as Element);
 
-        (this.constructor as typeof CivComponent).expressionMap = expressionMap;
+        let serial=1;
+        const elemTraitsLookup = (this.constructor as typeof CivComponent).elemTraitsLookup;
+        for (const [k, v] of elemTraitsMap) {
+            const sn = `${serial++}`;
+            k.setAttribute(significantFlagClass, sn);
+            elemTraitsLookup.set(sn, v);
+        }
     }
 
     protected _activateTemplate() {
