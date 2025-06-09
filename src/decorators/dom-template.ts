@@ -5,14 +5,15 @@ export const REACTIVE_TEMPLATE_IDENTIFIER = Symbol('REACTIVE_TEMPLATE_IDENTIFIER
 export const REACTIVE_TEMPLATE_DOM = Symbol('REACTIVE_TEMPLATE_DOM');
 export const REACTIVE_TEMPLATE_SHEET = Symbol('REACTIVE_TEMPLATE_SHEET');
 export interface ReactiveTemplateMixin {
+    new (...args: unknown[]): unknown;
     [REACTIVE_TEMPLATE_IDENTIFIER]?: string;
     [REACTIVE_TEMPLATE_DOM]?: Document;
     [REACTIVE_TEMPLATE_SHEET]?: CSSStyleSheet;
 }
 
-function identify(target: typeof Element, reIdentity?: any): string {
-    if (!(target.prototype instanceof Element)) {
-        throw new TypeError("Only Element can be identified");
+export function identify(target: ReactiveTemplateMixin, reIdentity?: any): string {
+    if (!(typeof target === 'function')) {
+        throw new TypeError("Only Class can be identified");
     }
 
     const n = Reflect.get(target, REACTIVE_TEMPLATE_IDENTIFIER);
@@ -30,7 +31,7 @@ function identify(target: typeof Element, reIdentity?: any): string {
 }
 
 export function HTML(text: string) {
-    return function <T extends typeof Element>(target: T) {
+    return function <T extends ReactiveTemplateMixin>(target: T) {
         if (typeof target !== 'function') {
             throw new TypeError("HTML decorator is intended for classes themselves.");
         }
@@ -60,7 +61,7 @@ function mangleSelectorText(cssRules: CSSRuleList, identifier: string): void {
 }
 
 export function CSS(text: string) {
-    return function <T extends typeof Element>(target: T) {
+    return function <T extends ReactiveTemplateMixin>(target: T) {
         if (typeof target !== 'function') {
             throw new TypeError("CSS decorator is intended for classes themselves.");
         }
@@ -75,7 +76,7 @@ export function CSS(text: string) {
 }
 
 export function Template(html: string, css?: string) {
-    return function <T extends typeof Element>(target: T) {
+    return function <T extends ReactiveTemplateMixin>(target: T) {
         HTML(html)(target);
         if (css) {
             CSS(css)(target);

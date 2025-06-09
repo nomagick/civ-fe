@@ -6,7 +6,6 @@ export const REACTIVE_CFG = Symbol('REACTIVE_CFG');
 export interface ReactivityHost {
     [REACTIVE_KIT]: ReactiveKit<this>;
     [REACTIVE_CFG]: Record<string, ReactivityOpts<this>>;
-
 }
 
 export interface ReactivityOpts<T extends ReactivityHost> {
@@ -50,20 +49,22 @@ export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>) {
     };
 }
 
-export function activateReactivity<T extends ReactivityHost>(target: T) {
-    if (!target.hasOwnProperty(REACTIVE_KIT)) {
-        target[REACTIVE_KIT] = new ReactiveKit(target);
+export function initReactivity(this: ReactivityHost) {
+    if (!this.hasOwnProperty(REACTIVE_KIT)) {
+        this[REACTIVE_KIT] = new ReactiveKit(this);
     }
 
-    if (!target.hasOwnProperty(REACTIVE_CFG)) {
-        target[REACTIVE_CFG] = Object.create(target[REACTIVE_CFG] || null);
+    if (!this.hasOwnProperty(REACTIVE_CFG)) {
+        this[REACTIVE_CFG] = Object.create(this[REACTIVE_CFG] || null);
     }
+}
 
-    for (const key of Object.keys(target[REACTIVE_CFG])) {
-        const config = target[REACTIVE_CFG][key];
+export function activateReactivity(this: ReactivityHost) {
+    for (const key of Object.keys(this[REACTIVE_CFG])) {
+        const config = this[REACTIVE_CFG][key];
         if (config.initializers) {
             for (const initializer of config.initializers) {
-                initializer.call(target);
+                initializer.call(this);
             }
         }
     }
