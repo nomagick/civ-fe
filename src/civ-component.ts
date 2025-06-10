@@ -1,7 +1,11 @@
 import { runOncePerClass } from "./decorators/once";
 import { REACTIVE_TEMPLATE_DOM, ReactiveTemplateMixin, identify } from "./decorators/dom-template";
 import { activateReactivity, initReactivity, ReactivityHost } from "./decorators/reactive";
-import { componentFlagClass, isMagicForAttr, isMagicForTemplateElement, namespaceInjectionArgName, significantFlagClass, subtreeTemplateFlagClass } from "./protocol";
+import {
+    attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
+    namespaceInjectionArgName, significantFlagClass, subtreeTemplateFlagClass,
+    Traits
+} from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
 import { parseTemplate } from "./utils/template-parser";
 import { DomMaintenanceTask, DomMaintenanceTaskType } from "./dom";
@@ -14,7 +18,7 @@ let serial = 1;
 export class CivComponent extends EventTarget {
     static components: Record<string, typeof CivComponent> = {};
     static expressionMap: Map<string, (this: CivComponent) => unknown> = new Map();
-    static elemTraitsLookup: Map<string, string[][]> = new Map();
+    static elemTraitsLookup: Map<string, Traits> = new Map();
     readonly serial = serial++;
     element!: Element;
     protected _pendingTasks: DomMaintenanceTask[] = [];
@@ -61,7 +65,7 @@ export class CivComponent extends EventTarget {
         });
 
         const expressionMap = (this.constructor as typeof CivComponent).expressionMap;
-        const elemTraitsMap: Map<Element, string[][]> = new Map();
+        const elemTraitsMap: Map<Element, Traits> = new Map();
         const components = (this.constructor as typeof CivComponent).components;
 
         let elem = walker.currentNode as Element | Text;
@@ -82,7 +86,7 @@ export class CivComponent extends EventTarget {
 
                 continue;
             }
-            const elemTraits: string[][] = [];
+            const elemTraits: Traits = [];
             const magicAttrs: Attr[] = [];
             if (Reflect.get(components, elem.tagName)) {
                 elem.classList.add(componentFlagClass);
@@ -167,8 +171,9 @@ export class CivComponent extends EventTarget {
         return this.element;
     }
 
-    protected _installMagic(elem: Element = this.element) {
-
+    protected _installMagic(elem: Element = this.element, ns?: Record<string, any>) {
+        const elemTraitsLookup = (this.constructor as typeof CivComponent).elemTraitsLookup;
+        const expressionMap = (this.constructor as typeof CivComponent).expressionMap;
         let el;
         while (el = elem.querySelector(`.${subtreeTemplateFlagClass}`)) {
             const start = document.createComment(`=== Start ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
@@ -187,33 +192,36 @@ export class CivComponent extends EventTarget {
                 type: DomMaintenanceTaskType.SUBTREE_RENDER,
                 tpl: el,
                 anchor: [start, end],
-                expr
+                expr,
+                ns
             });
         }
         const componentPlaceHolderElements = new Set<Element>();
 
-        elem.querySelectorAll(`.${componentFlagClass}`).forEach((el)=> {
+        elem.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
             componentPlaceHolderElements.add(el);
             el.classList.remove(componentFlagClass);
             const elSerial = el.getAttribute(significantFlagClass) || '';
             if (!elSerial) {
                 throw new Error(`Element with component flag does not have a significant flag class in component ${identify(this.constructor as typeof CivComponent)}`);
             }
-            const traits = (this.constructor as typeof CivComponent).elemTraitsLookup.get(elSerial);
+            const traits = elemTraitsLookup.get(elSerial) || [];
             this._pendingTasks.push({
                 type: DomMaintenanceTaskType.COMPONENT_RENDER,
                 sub: el,
                 comp: el.tagName,
-                traits: traits || []
+                traits,
+                ns
             });
         });
 
-        elem.querySelectorAll(`.${significantFlagClass}`).forEach((el)=> {
+        elem.querySelectorAll(`.${significantFlagClass}`).forEach((el) => {
             const elSerial = el.getAttribute(significantFlagClass) || '';
-            const traits = (this.constructor as typeof CivComponent).elemTraitsLookup.get(elSerial);
+            const traits = elemTraitsLookup.get(elSerial);
             if (!traits) {
                 throw new Error(`Cannot find traits for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
             }
+            const hasPlainTrait = traits.some(([trait]) => trait === 'plain');
             for (const [trait, ...args] of traits) {
                 switch (trait) {
                     case 'attr': {
@@ -227,6 +235,7 @@ export class CivComponent extends EventTarget {
                             type: DomMaintenanceTaskType.ATTR_SYNC,
                             attr: attrNode,
                             expr,
+                            ns,
                         });
                         break;
                     }
@@ -237,24 +246,118 @@ export class CivComponent extends EventTarget {
                             tgt: el,
                             prop: propName,
                             expr,
+                            ns,
+                        });
+                        break;
+                    }
+                    case 'event': {
+                        const [eventName, expr] = args;
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.EVENT_BRIDGE,
+                            elem: el,
+                            event: eventName,
+                            expr,
+                            ns,
+                        });
+                        break;
+                    }
+                    case 'if': {
+                        const [expr] = args;
+                        const exprGroup: [string, Element][] = [
+                            [expr, el]
+                        ];
+                        let nextSibling;
+                        while (nextSibling = el.nextSibling) {
+                            if (nextSibling instanceof Comment) {
+                                continue;
+                            } else if (nextSibling instanceof Text) {
+                                if (nextSibling.textContent?.trim()) {
+                                    break;
+                                }
+                                continue;
+                            }
+                            if (nextSibling instanceof Element) {
+                                const elSerial = nextSibling.getAttribute(significantFlagClass);
+                                if (!elSerial) {
+                                    break;
+                                }
+                                const traits = elemTraitsLookup.get(elSerial);
+                                const elifTrait = traits?.find(([t]) => t === 'elif');
+                                if (elifTrait) {
+                                    const [, expr] = elifTrait;
+                                    exprGroup.push([expr, nextSibling]);
+                                    continue;
+                                }
+
+                                const elseTrait = traits?.find(([t]) => t === 'else');
+                                if (elseTrait) {
+                                    exprGroup.push(['', nextSibling]);
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                        const placeHolder = document.createComment(`=== if group ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
+                        el.before(placeHolder);
+                        for (const [_expr, el] of exprGroup) {
+                            el.remove();
+                        }
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.SUBTREE_TOGGLE,
+                            sub: placeHolder,
+                            exprGroup,
+                            ns,
+                        });
+                        break;
+                    }
+                    case 'html': {
+                        const [expr] = args;
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.PROP_SYNC,
+                            tgt: el,
+                            prop: 'innerHTML',
+                            expr,
+                            ns,
+                        });
+                        break;
+                    }
+                    case 'bind': {
+                        const [expr] = args;
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.PROP_SYNC,
+                            tgt: el,
+                            prop: 'textContent',
+                            expr,
+                            ns,
                         });
                         break;
                     }
                     case 'tpl': {
-                        this._pendingTasks.push({
-                            type: DomMaintenanceTaskType.SUBTREE_RENDER,
-                            tpl: el,
-                            anchor: [el.previousSibling!, el.nextSibling!],
-                            expr
-                        });
+                        if (hasPlainTrait) {
+                            break;
+                        }
+                        el.childNodes.forEach((node) => {
+                            if (!(node instanceof Text)) {
+                                return;
+                            }
+                            if (!node.textContent) {
+                                return;
+                            }
+
+                            if (expressionMap.has(node.textContent)) {
+                                this._pendingTasks.push({
+                                    type: DomMaintenanceTaskType.TPL_SYNC,
+                                    text: node,
+                                    expr: node.textContent,
+                                    ns,
+                                });
+                            }
+                        })
+
                         break;
                     }
                     default: {
-                        this._pendingTasks.push({
-                            type: DomMaintenanceTaskType.ATTR_SYNC,
-                            attr: el.attributes.getNamedItem(trait)!,
-                            expr
-                        });
+                        break;
                     }
                 }
             }

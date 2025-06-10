@@ -60,6 +60,7 @@ export interface ComponentRenderTask {
     sub: Node;
     comp: string;
     traits: string[][];
+    ns?: Record<string, unknown>;
 }
 
 export type DomMaintenanceTask =
@@ -68,4 +69,5 @@ export type DomMaintenanceTask =
     | EventBridgeTask
     | SubtreeRenderTask
     | SubtreeToggleTask
+    | TplSyncTask
     | ComponentRenderTask;

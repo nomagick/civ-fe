@@ -67,3 +67,45 @@ export function isMagicPlainAttr(name: string) {
 
 export const eventArgName = '$event';
 export const namespaceInjectionArgName = '_ns';
+
+export type Trait = 'tpl' | 'component' | 'attr' | 'prop' | 'event' | 'for' | 'if' | 'elif' | 'else' | 'html' | 'bind' | 'plain';
+
+export function attrToTrait(attrName: string, expr: string): string[] | undefined {
+    const parsedAttr = parseMagicAttr(attrName);
+    if (parsedAttr) {
+        return ['attr', parsedAttr, expr] as const;
+    }
+    const parsedProp = parseMagicProp(attrName);
+    if (parsedProp) {
+        return ['prop', parsedProp, expr] as const;
+    }
+    const parsedEvent = parseMagicEventHandler(attrName);
+    if (parsedEvent) {
+        return ['event', parsedEvent, expr] as const;
+    }
+    if (isMagicForAttr(attrName)) {
+        return ['for', expr] as const;
+    }
+    if (isMagicIfAttr(attrName)) {
+        return ['if', expr] as const;
+    }
+    if (isMagicElifAttr(attrName)) {
+        return ['elif', expr] as const;
+    }
+    if (isMagicElseAttr(attrName)) {
+        return ['else'] as const;
+    }
+    if (isMagicHTMLAttr(attrName)) {
+        return ['html', expr] as const;
+    }
+    if (isMagicBindAttr(attrName)) {
+        return ['bind', expr] as const;
+    }
+    if (isMagicPlainAttr(attrName)) {
+        return ['plain'] as const;
+    }
+
+    return undefined;
+}
+
+export type Traits = [Trait, ...string[]][];
