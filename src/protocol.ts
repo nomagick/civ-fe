@@ -38,13 +38,14 @@ export function parseMagicEventHandler(name: string) {
 }
 
 export const significantFlagClass = '__civ_significant';
+export const subtreeTemplateFlagClass = '__civ_subtree_template';
+export const componentFlagClass = '__civ_component';
 export function isMagicForAttr(name: string) {
     return name === `${pseudoNamespacePrefix}for` || name === 'v-for';
 }
 export function isMagicForTemplateElement(elem: Element) {
     return elem.hasAttribute(`${pseudoNamespacePrefix}for`) || elem.hasAttribute('v-for');
 }
-export const magicForSelector = `.${significantFlagClass}[${pseudoNamespacePrefix}for], .${significantFlagClass}[v-for]`;
 export function isMagicIfAttr(name: string) {
     return name === `${pseudoNamespacePrefix}if` || name === 'v-if';
 }
@@ -66,4 +67,3 @@ export function isMagicPlainAttr(name: string) {
 
 export const eventArgName = '$event';
 export const namespaceInjectionArgName = '_ns';
-

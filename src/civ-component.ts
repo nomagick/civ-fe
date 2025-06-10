@@ -1,9 +1,10 @@
 import { runOncePerClass } from "./decorators/once";
 import { REACTIVE_TEMPLATE_DOM, ReactiveTemplateMixin, identify } from "./decorators/dom-template";
 import { activateReactivity, initReactivity, ReactivityHost } from "./decorators/reactive";
-import { attrToTrait, isMagicBindAttr, isMagicElifAttr, isMagicElseAttr, isMagicForAttr, isMagicForTemplateElement, isMagicHTMLAttr, isMagicIfAttr, isMagicPlainAttr, namespaceInjectionArgName, parseMagicAttr, parseMagicEventHandler, parseMagicProp, significantFlagClass } from "./protocol";
+import { componentFlagClass, isMagicForAttr, isMagicForTemplateElement, namespaceInjectionArgName, significantFlagClass, subtreeTemplateFlagClass } from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
-import { parseTemplate } from "utils/template-parser";
+import { parseTemplate } from "./utils/template-parser";
+import { DomMaintenanceTask, DomMaintenanceTaskType } from "./dom";
 
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin { }
 
@@ -14,8 +15,10 @@ export class CivComponent extends EventTarget {
     static components: Record<string, typeof CivComponent> = {};
     static expressionMap: Map<string, (this: CivComponent) => unknown> = new Map();
     static elemTraitsLookup: Map<string, string[][]> = new Map();
+    readonly serial = serial++;
     element!: Element;
-    serial = serial++;
+    protected _pendingTasks: DomMaintenanceTask[] = [];
+
 
     constructor() {
         super();
@@ -27,6 +30,13 @@ export class CivComponent extends EventTarget {
 
     @runOncePerClass
     protected _digestTemplateMagicExpressions() {
+        if (this.constructor.hasOwnProperty('components')) {
+            const components = (this.constructor as typeof CivComponent).components;
+            for (const [k, v] of Object.entries(components)) {
+                Reflect.deleteProperty(components, k);
+                Reflect.set(components, k.toUpperCase(), v);
+            }
+        }
         const dom = this[REACTIVE_TEMPLATE_DOM];
         if (!dom) {
             return;
@@ -52,8 +62,9 @@ export class CivComponent extends EventTarget {
 
         const expressionMap = (this.constructor as typeof CivComponent).expressionMap;
         const elemTraitsMap: Map<Element, string[][]> = new Map();
+        const components = (this.constructor as typeof CivComponent).components;
 
-        let elem: Element | Text = walker.currentNode as Element;
+        let elem = walker.currentNode as Element | Text;
         do {
             if (elem instanceof Text) {
                 const tpl = elem.textContent || '';
@@ -67,12 +78,16 @@ export class CivComponent extends EventTarget {
                 const parentTraits = elemTraitsMap.get(elem.parentElement!) || [];
                 parentTraits.push(['tpl']);
                 elemTraitsMap.set(elem.parentElement!, parentTraits);
+                elem.parentElement!.classList.add(significantFlagClass);
 
                 continue;
             }
             const elemTraits: string[][] = [];
+            const magicAttrs: Attr[] = [];
+            if (Reflect.get(components, elem.tagName)) {
+                elem.classList.add(componentFlagClass);
+            }
 
-            let curElemIsCivSignificant = false;
             for (let i = 0; i < elem.attributes.length; i++) {
                 const attr = elem.attributes[i];
                 if (!attr.value) {
@@ -81,11 +96,11 @@ export class CivComponent extends EventTarget {
                 const name = attr.localName;
                 const expr = attr.value.trim();
 
-
                 const trait = attrToTrait(name, expr);
                 if (!trait) {
                     continue;
                 }
+                magicAttrs.push(attr);
                 if (trait.length === 1 || !trait.includes(expr)) {
                     continue;
                 }
@@ -102,6 +117,7 @@ export class CivComponent extends EventTarget {
                         throw new Error(`Invalid expression for *for: ${expr}`);
                     }
                     const exp1 = matched.groups!.exp1.trim();
+                    elem.classList.add(subtreeTemplateFlagClass);
                     const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { for (${expr}) { yield ${exp1}; } } }`) as any;
                     Object.defineProperty(genFn, name, {
                         value: `*${genFn.name}`,
@@ -112,15 +128,16 @@ export class CivComponent extends EventTarget {
                     expressionMap.set(expr, new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return ${expr}; } }`) as any);
                 }
             }
-            if (curElemIsCivSignificant) {
-                elem.classList.add(significantFlagClass);
+            for (const attr of magicAttrs) {
+                elem.removeAttributeNode(attr);
             }
             if (elemTraits.length) {
+                elem.classList.add(significantFlagClass);
                 elemTraitsMap.set(elem, elemTraits);
             }
         } while (elem = walker.nextNode() as Element);
 
-        let serial=1;
+        let serial = 1;
         const elemTraitsLookup = (this.constructor as typeof CivComponent).elemTraitsLookup;
         for (const [k, v] of elemTraitsMap) {
             const sn = `${serial++}`;
@@ -151,6 +168,98 @@ export class CivComponent extends EventTarget {
     }
 
     protected _installMagic(elem: Element = this.element) {
+
+        let el;
+        while (el = elem.querySelector(`.${subtreeTemplateFlagClass}`)) {
+            const start = document.createComment(`=== Start ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
+            const end = document.createComment(`=== End ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
+            el.before(start);
+            el.after(end);
+            el.remove();
+            el.classList.remove(subtreeTemplateFlagClass);
+
+            const elSerial = el.getAttribute(significantFlagClass) || '';
+            const expr = (this.constructor as typeof CivComponent).elemTraitsLookup.get(elSerial)?.find(([t]) => t === 'for')?.[1];
+            if (!expr) {
+                throw new Error(`Cannot find *for expression for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
+            }
+            this._pendingTasks.push({
+                type: DomMaintenanceTaskType.SUBTREE_RENDER,
+                tpl: el,
+                anchor: [start, end],
+                expr
+            });
+        }
+        const componentPlaceHolderElements = new Set<Element>();
+
+        elem.querySelectorAll(`.${componentFlagClass}`).forEach((el)=> {
+            componentPlaceHolderElements.add(el);
+            el.classList.remove(componentFlagClass);
+            const elSerial = el.getAttribute(significantFlagClass) || '';
+            if (!elSerial) {
+                throw new Error(`Element with component flag does not have a significant flag class in component ${identify(this.constructor as typeof CivComponent)}`);
+            }
+            const traits = (this.constructor as typeof CivComponent).elemTraitsLookup.get(elSerial);
+            this._pendingTasks.push({
+                type: DomMaintenanceTaskType.COMPONENT_RENDER,
+                sub: el,
+                comp: el.tagName,
+                traits: traits || []
+            });
+        });
+
+        elem.querySelectorAll(`.${significantFlagClass}`).forEach((el)=> {
+            const elSerial = el.getAttribute(significantFlagClass) || '';
+            const traits = (this.constructor as typeof CivComponent).elemTraitsLookup.get(elSerial);
+            if (!traits) {
+                throw new Error(`Cannot find traits for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
+            }
+            for (const [trait, ...args] of traits) {
+                switch (trait) {
+                    case 'attr': {
+                        const [attrName, expr] = args;
+                        let attrNode: Attr | null = el.getAttributeNode(attrName);
+                        if (!attrNode) {
+                            attrNode = document.createAttribute(attrName);
+                            el.setAttributeNode(attrNode);
+                        }
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.ATTR_SYNC,
+                            attr: attrNode,
+                            expr,
+                        });
+                        break;
+                    }
+                    case 'prop': {
+                        const [propName, expr] = args;
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.PROP_SYNC,
+                            tgt: el,
+                            prop: propName,
+                            expr,
+                        });
+                        break;
+                    }
+                    case 'tpl': {
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.SUBTREE_RENDER,
+                            tpl: el,
+                            anchor: [el.previousSibling!, el.nextSibling!],
+                            expr
+                        });
+                        break;
+                    }
+                    default: {
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.ATTR_SYNC,
+                            attr: el.attributes.getNamedItem(trait)!,
+                            expr
+                        });
+                    }
+                }
+            }
+        });
+
         for (const [k, v] of Object.entries((this.constructor as typeof CivComponent).components)) {
             elem.querySelectorAll<HTMLElement>(k).forEach((el) => {
                 const namedTemplates = el.querySelectorAll(`:scope > template[for]`);
@@ -191,21 +300,4 @@ export class CivComponent extends EventTarget {
 
 
     }
-}
-
-
-enum DomMaintenanceTaskType {
-    ATTR_SYNC = 'attrSync',
-    PROP_SYNC = 'propSync',
-    EVENT_BRIDGE = 'eventBridge',
-    SUBTREE_CLONE = 'subtreeClone',
-    ATTACHMENT_TOGGLE = 'attachmentToggle',
-    MIGRATE_ELEMENT = 'migrateElement',
-}
-
-interface DomMaintenanceTask {
-    type: DomMaintenanceTaskType;
-    ref: Node;
-    prop?: string;
-
 }
