@@ -1,3 +1,4 @@
+import { extractForLoopTokens } from "./utils/lang";
 
 
 export const pseudoNamespacePrefix = 'c:'
@@ -37,6 +38,14 @@ export function parseMagicEventHandler(name: string) {
     return undefined;
 }
 
+export function parseMagicDocumentEventHandler(name: string) {
+    if (name.startsWith('@@') && name[2]) {
+        return name.slice(2);
+    }
+
+    return undefined;
+}
+
 export const significantFlagClass = '__civ_significant';
 export const subtreeTemplateFlagClass = '__civ_subtree_template';
 export const componentFlagClass = '__civ_component';
@@ -68,7 +77,7 @@ export function isMagicPlainAttr(name: string) {
 export const eventArgName = '$event';
 export const namespaceInjectionArgName = '_ns';
 
-export type Trait = 'tpl' | 'component' | 'attr' | 'prop' | 'event' | 'for' | 'if' | 'elif' | 'else' | 'html' | 'bind' | 'plain';
+export type Trait = 'tpl' | 'component' | 'attr' | 'prop' | 'event' | 'documentEvent' | 'for' | 'if' | 'elif' | 'else' | 'html' | 'bind' | 'plain';
 
 export function attrToTrait(attrName: string, expr: string): string[] | undefined {
     const parsedAttr = parseMagicAttr(attrName);
@@ -79,12 +88,16 @@ export function attrToTrait(attrName: string, expr: string): string[] | undefine
     if (parsedProp) {
         return ['prop', parsedProp, expr] as const;
     }
+    const documentEvent = parseMagicDocumentEventHandler(attrName);
+    if (documentEvent) {
+        return ['documentEvent', documentEvent, expr] as const;
+    }
     const parsedEvent = parseMagicEventHandler(attrName);
     if (parsedEvent) {
         return ['event', parsedEvent, expr] as const;
     }
     if (isMagicForAttr(attrName)) {
-        return ['for', expr] as const;
+        return ['for', expr, extractForLoopTokens(expr).join(',')] as const;
     }
     if (isMagicIfAttr(attrName)) {
         return ['if', expr] as const;

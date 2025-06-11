@@ -1,6 +1,6 @@
 import { runOncePerClass } from "./decorators/once";
 import { REACTIVE_TEMPLATE_DOM, ReactiveTemplateMixin, identify } from "./decorators/dom-template";
-import { activateReactivity, initReactivity, ReactivityHost } from "./decorators/reactive";
+import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./decorators/reactive";
 import {
     attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
     namespaceInjectionArgName, significantFlagClass, subtreeTemplateFlagClass,
@@ -8,21 +8,22 @@ import {
 } from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
 import { parseTemplate } from "./utils/template-parser";
-import { DomMaintenanceTask, DomMaintenanceTaskType } from "./dom";
+import { DomMaintenanceTask, DomMaintenanceTaskType, SubtreeRenderTask } from "./dom";
 
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin { }
 
-const forExpRegex = /^(?<exp1>.+?)\s+(in|of)\s+(?<exp2>.+)$/;
+const forExpRegex = /^(?<exp1>.+?)\s+(?<typ>in|of)\s+(?<exp2>.+)$/;
 let serial = 1;
 
 export class CivComponent extends EventTarget {
     static components: Record<string, typeof CivComponent> = {};
-    static expressionMap: Map<string, (this: CivComponent) => unknown> = new Map();
+    static expressionMap: Map<string, (this: CivComponent, _ns: Record<string, unknown>) => unknown> = new Map();
     static elemTraitsLookup: Map<string, Traits> = new Map();
     readonly serial = serial++;
     element!: Element;
     protected _pendingTasks: DomMaintenanceTask[] = [];
-
+    protected _revokers: Set<AbortController> = new Set();
+    protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
 
     constructor() {
         super();
@@ -30,6 +31,22 @@ export class CivComponent extends EventTarget {
         this._digestTemplateMagicExpressions();
         this._activateTemplate();
         Reflect.apply(activateReactivity, this, []);
+    }
+
+    protected _cleanup() {
+        for (const x of this._revokers) {
+            x.abort();
+        }
+    }
+
+    protected get _expressionMap() {
+        return (this.constructor as typeof CivComponent).expressionMap;
+    }
+    protected get _elemTraitsLookup() {
+        return (this.constructor as typeof CivComponent).elemTraitsLookup;
+    }
+    protected get _components() {
+        return (this.constructor as typeof CivComponent).components;
     }
 
     @runOncePerClass
@@ -108,10 +125,6 @@ export class CivComponent extends EventTarget {
                 if (trait.length === 1 || !trait.includes(expr)) {
                     continue;
                 }
-
-                if (this.constructor.prototype.hasOwnProperty(expr)) {
-                    continue;
-                }
                 if (expressionMap.has(expr) || !expr) {
                     continue;
                 }
@@ -120,14 +133,14 @@ export class CivComponent extends EventTarget {
                     if (!matched) {
                         throw new Error(`Invalid expression for *for: ${expr}`);
                     }
-                    const exp1 = matched.groups!.exp1.trim();
                     elem.classList.add(subtreeTemplateFlagClass);
-                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { for (${expr}) { yield ${exp1}; } } }`) as any;
+                    const expr2 = matched.groups!.expr2;
+                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { yield ${expr2}; for (${expr}) { yield ${namespaceInjectionArgName}; } } }`) as any;
                     Object.defineProperty(genFn, name, {
                         value: `*${genFn.name}`,
                         configurable: true
                     });
-                    expressionMap.set(exp1, genFn);
+                    expressionMap.set(expr, genFn);
                 } else {
                     expressionMap.set(expr, new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return ${expr}; } }`) as any);
                 }
@@ -171,9 +184,9 @@ export class CivComponent extends EventTarget {
         return this.element;
     }
 
-    protected _installMagic(elem: Element = this.element, ns?: Record<string, any>) {
-        const elemTraitsLookup = (this.constructor as typeof CivComponent).elemTraitsLookup;
-        const expressionMap = (this.constructor as typeof CivComponent).expressionMap;
+    protected _renderTemplateElem(elem: Element = this.element, ns?: Record<string, any>) {
+        const elemTraitsLookup = this._elemTraitsLookup;
+        const expressionMap = this._expressionMap;
         let el;
         while (el = elem.querySelector(`.${subtreeTemplateFlagClass}`)) {
             const start = document.createComment(`=== Start ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
@@ -184,15 +197,20 @@ export class CivComponent extends EventTarget {
             el.classList.remove(subtreeTemplateFlagClass);
 
             const elSerial = el.getAttribute(significantFlagClass) || '';
-            const expr = (this.constructor as typeof CivComponent).elemTraitsLookup.get(elSerial)?.find(([t]) => t === 'for')?.[1];
+            const [, expr, nsJoint] = this._elemTraitsLookup.get(elSerial)?.find(([t]) => t === 'for') || [];
             if (!expr) {
                 throw new Error(`Cannot find *for expression for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
+            }
+            const injectNs = nsJoint?.split(',').filter(Boolean);
+            if (!injectNs?.length) {
+                throw new Error(`Invalid *for expression: ${expr} for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
             }
             this._pendingTasks.push({
                 type: DomMaintenanceTaskType.SUBTREE_RENDER,
                 tpl: el,
                 anchor: [start, end],
                 expr,
+                injectNs,
                 ns
             });
         }
@@ -254,7 +272,18 @@ export class CivComponent extends EventTarget {
                         const [eventName, expr] = args;
                         this._pendingTasks.push({
                             type: DomMaintenanceTaskType.EVENT_BRIDGE,
-                            elem: el,
+                            tgt: el,
+                            event: eventName,
+                            expr,
+                            ns,
+                        });
+                        break;
+                    }
+                    case 'documentEvent': {
+                        const [eventName, expr] = args;
+                        this._pendingTasks.push({
+                            type: DomMaintenanceTaskType.EVENT_BRIDGE,
+                            tgt: document,
                             event: eventName,
                             expr,
                             ns,
@@ -304,7 +333,7 @@ export class CivComponent extends EventTarget {
                         }
                         this._pendingTasks.push({
                             type: DomMaintenanceTaskType.SUBTREE_TOGGLE,
-                            sub: placeHolder,
+                            anchor: placeHolder,
                             exprGroup,
                             ns,
                         });
@@ -352,7 +381,7 @@ export class CivComponent extends EventTarget {
                                     ns,
                                 });
                             }
-                        })
+                        });
 
                         break;
                     }
@@ -400,6 +429,84 @@ export class CivComponent extends EventTarget {
                 });
             });
         }
+
+
+    }
+
+    protected _evaluateExpr(expr: string, ns: Record<string, any> = Object.create(null)) {
+        const fn = this._expressionMap.get(expr);
+        if (!fn) {
+            throw new Error(`Cannot find eval function for expression: ${expr}`);
+        }
+
+        if (fn.name.startsWith('*')) {
+            throw new Error(`Cannot evaluate generator function: ${fn.name}. Use _evaluateForExpr instead.`);
+        }
+
+        const vecs: [object, string][] = [];
+
+        const hdl = (tgt: object, prop: string) => {
+            vecs.push([tgt, prop]);
+        };
+        this[REACTIVE_KIT].on('access', hdl);
+        const r = fn.call(this, ns);
+        this[REACTIVE_KIT].off('access', hdl);
+
+        return { value: r, vecs };
+    }
+
+    protected *_evaluateForExpr(expr: string, ns: Record<string, any> = Object.create(null)) {
+        const fn = this._expressionMap.get(expr) as any;
+        if (!fn) {
+            throw new Error(`Cannot find generator function for expression: ${expr}`);
+        }
+
+        if (!fn.name.startsWith('*')) {
+            throw new Error(`Cannot evaluate non generator function: ${fn.name}. Use _evaluateExpr instead.`);
+        }
+
+        const vecs: [object, string][] = [];
+
+        const hdl = (tgt: object, prop: string) => {
+            vecs.push([tgt, prop]);
+        };
+        this[REACTIVE_KIT].on('access', hdl);
+        const it = fn.call(this, ns) as Generator;
+        it.next();
+        this[REACTIVE_KIT].off('access', hdl);
+
+        const dVecs: [object, string][] = [];
+        const dhdl = (tgt: object, prop: string) => {
+            dVecs.push([tgt, prop]);
+        };
+        this[REACTIVE_KIT].on('access', dhdl);
+
+        for (const x of it) {
+            yield { value: x, vecs: vecs.concat(dVecs) };
+            dVecs.length = 0;
+        }
+    }
+
+    protected _setupTaskRecurrence(task: DomMaintenanceTask, vecs: [object, string][]) {
+        const abortCtl = new AbortController();
+        const handler = () => {
+            abortCtl.abort('recur');
+            this._pendingTasks.push(task);
+        };
+
+        for (const [tgt, prop] of vecs) {
+            let evtgt = this._reactiveTargets.get(tgt);
+            if (!evtgt) {
+                evtgt = new EventTarget();
+                this._reactiveTargets.set(tgt, evtgt);
+            }
+            evtgt.addEventListener(prop, handler, { signal: abortCtl.signal, once: true });
+        }
+
+        return abortCtl;
+    }
+
+    protected _handleSubtreeRenderTask(task: SubtreeRenderTask) {
 
 
     }

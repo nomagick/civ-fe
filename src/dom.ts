@@ -34,7 +34,7 @@ export interface TplSyncTask {
 
 export interface EventBridgeTask {
     type: DomMaintenanceTaskType.EVENT_BRIDGE;
-    elem: Element;
+    tgt: EventTarget;
     event: string;
     expr: string;
     ns?: Record<string, unknown>;
@@ -45,12 +45,13 @@ export interface SubtreeRenderTask {
     tpl: Element;
     anchor: [Node, Node];
     expr: string;
+    injectNs: string[];
     ns?: Record<string, unknown>;
 }
 
 export interface SubtreeToggleTask {
     type: DomMaintenanceTaskType.SUBTREE_TOGGLE;
-    sub: Node;
+    anchor: Node;
     exprGroup: [string, Element][];
     ns?: Record<string, unknown>;
 }
