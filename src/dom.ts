@@ -43,7 +43,7 @@ export interface EventBridgeTask {
 export interface SubtreeRenderTask {
     type: DomMaintenanceTaskType.SUBTREE_RENDER;
     tpl: Element;
-    anchor: [Node, Node];
+    anchor: [Node, Node, Node];
     expr: string;
     injectNs: string[];
     ns?: Record<string, unknown>;
@@ -58,17 +58,17 @@ export interface SubtreeToggleTask {
 
 export interface ComponentRenderTask {
     type: DomMaintenanceTaskType.COMPONENT_RENDER;
-    sub: Node;
+    sub: Element;
     comp: string;
     traits: string[][];
     ns?: Record<string, unknown>;
 }
 
 export type DomMaintenanceTask =
+    | SubtreeRenderTask
+    | ComponentRenderTask
     | AttrSyncTask
     | PropSyncTask
-    | EventBridgeTask
-    | SubtreeRenderTask
-    | SubtreeToggleTask
     | TplSyncTask
-    | ComponentRenderTask;
+    | SubtreeToggleTask
+    | EventBridgeTask;

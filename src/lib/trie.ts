@@ -64,17 +64,25 @@ export class TrieNode<T = unknown, D = unknown> {
         return true;
     }
 
-    seek(...series: T[]): [TrieNode<T, D>, T[]] {
+    seek(...series: T[]): { found: true; ptr: TrieNode<T, D>; payload?: D } | { found: false; ptr: TrieNode<T, D>; deviation: T[] } {
         if (series.length === 0) {
-            return [this, []];
+            return {
+                found: true,
+                ptr: this,
+                payload: this.payload
+            };
         }
 
         // eslint-disable-next-line @typescript-eslint/no-this-alias
-        let node: TrieNode<T> | null = this;
+        let node: TrieNode<T, D> | null = this;
         const [head, ...tail] = series;
 
         if (!node.children.has(head)) {
-            return [node as any, series];
+            return {
+                found: false,
+                ptr: node,
+                deviation: series
+            };
         }
 
         node = node.children.get(head)!;

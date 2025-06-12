@@ -183,7 +183,7 @@ export function digConstructablePrototype(o: object) {
     while (ptr) {
         ptr = Object.getPrototypeOf(ptr);
         if (ptr === null) {
-            return undefined;
+            return null;
         }
         if (typeof ptr.constructor === 'function') {
             break;
@@ -201,12 +201,12 @@ export function isPrimitiveType(t: any) {
 export function isPrimitiveLike(o: any, ...primitivePrototypeSets: Array<Set<object>>) {
     const constructablePrototype = digConstructablePrototype(o);
 
+    if (constructablePrototype === Object.prototype || constructablePrototype === Array.prototype || constructablePrototype === null) {
+        return false;
+    }
+    
     if (!constructablePrototype) {
         return true;
-    }
-
-    if (constructablePrototype === Object.prototype || constructablePrototype === Array.prototype) {
-        return false;
     }
 
     if (NATIVE_CLASS_PROTOTYPES.has(constructablePrototype)) {

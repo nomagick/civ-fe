@@ -8,14 +8,17 @@ import {
 } from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
 import { parseTemplate } from "./utils/template-parser";
-import { DomMaintenanceTask, DomMaintenanceTaskType, SubtreeRenderTask } from "./dom";
+import { AttrSyncTask, ComponentRenderTask, DomMaintenanceTask, DomMaintenanceTaskType, EventBridgeTask, PropSyncTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask } from "./dom";
+import { TrieNode } from "./lib/trie";
+import { ReactiveAttrMixin, setupAttrObserver } from "./decorators/attr";
+import { EventEmitter } from "lib/event-emitter";
 
-export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin { }
+export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin { }
 
 const forExpRegex = /^(?<exp1>.+?)\s+(?<typ>in|of)\s+(?<exp2>.+)$/;
 let serial = 1;
 
-export class CivComponent extends EventTarget {
+export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
     static expressionMap: Map<string, (this: CivComponent, _ns: Record<string, unknown>) => unknown> = new Map();
     static elemTraitsLookup: Map<string, Traits> = new Map();
@@ -24,20 +27,43 @@ export class CivComponent extends EventTarget {
     protected _pendingTasks: DomMaintenanceTask[] = [];
     protected _revokers: Set<AbortController> = new Set();
     protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
+    protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<any, Element>> = new WeakMap();
+    protected _elToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
+    protected _taskToNodeMap: WeakMap<DomMaintenanceTask, Node> = new WeakMap();
 
     constructor() {
         super();
         Reflect.apply(initReactivity, this, []);
         this._digestTemplateMagicExpressions();
         this._activateTemplate();
+        if ('observedAttributes' in this.constructor) {
+            // @ts-ignore
+            setupAttrObserver.call(this);
+        }
         Reflect.apply(activateReactivity, this, []);
     }
 
     foreign(eventTarget: ReactivityHost) {
         const abortCtl = this[REACTIVE_KIT].connect(eventTarget[REACTIVE_KIT]);
         this._revokers.add(abortCtl);
-        
+
         return abortCtl;
+    }
+
+    connectedCallback() {
+        this.emit('connected');
+    }
+    disconnectedCallback() {
+        this.emit('disconnected');
+    }
+    connectedMoveCallback() {
+        this.emit('connectedMove');
+    }
+    adoptedCallback() {
+        this.emit('adopted');
+    }
+    attributeChangedCallback(name: string, oldValue: string, newValue: string) {
+        this.emit('attributeChange', name, oldValue, newValue);
     }
 
     protected _cleanup() {
@@ -200,6 +226,7 @@ export class CivComponent extends EventTarget {
             const end = document.createComment(`=== End ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
             el.before(start);
             el.after(end);
+            const parent = el.parentNode!;
             el.remove();
             el.classList.remove(subtreeTemplateFlagClass);
 
@@ -212,10 +239,13 @@ export class CivComponent extends EventTarget {
             if (!injectNs?.length) {
                 throw new Error(`Invalid *for expression: ${expr} for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
             }
+            if (!el.parentNode) {
+                throw new Error()
+            }
             this._pendingTasks.push({
                 type: DomMaintenanceTaskType.SUBTREE_RENDER,
                 tpl: el,
-                anchor: [start, end],
+                anchor: [parent, start, end],
                 expr,
                 injectNs,
                 ns
@@ -399,45 +429,6 @@ export class CivComponent extends EventTarget {
             }
         });
 
-        for (const [k, v] of Object.entries((this.constructor as typeof CivComponent).components)) {
-            elem.querySelectorAll<HTMLElement>(k).forEach((el) => {
-                const namedTemplates = el.querySelectorAll(`:scope > template[for]`);
-                if (namedTemplates.length) {
-                    namedTemplates.forEach((el) => el.remove());
-                }
-                const instance = new v();
-                const targetElement = instance.element;
-
-                const attributes = el.attributes;
-                for (let i = attributes.length - 1; i >= 0; i--) {
-                    const attr = attributes[i];
-                    targetElement.setAttributeNode(attr);
-                }
-
-                const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
-                if (defaultSlot) {
-                    defaultSlot.classList.add(`${identify(v)}__slotted`);
-                    el.childNodes.forEach((node) => {
-                        defaultSlot.appendChild(node);
-                    });
-                }
-                namedTemplates.forEach((template) => {
-                    const forAttr = template.getAttribute('for');
-                    if (!forAttr) {
-                        return;
-                    }
-                    const targetSlot = targetElement.querySelector<HTMLElement>(`slot[name="${forAttr}"]`);
-                    if (!targetSlot) {
-                        return;
-                    }
-                    template.childNodes.forEach((node) => {
-                        targetSlot.appendChild(node);
-                    });
-                });
-            });
-        }
-
-
     }
 
     protected _evaluateExpr(expr: string, ns: Record<string, any> = Object.create(null)) {
@@ -482,6 +473,8 @@ export class CivComponent extends EventTarget {
         it.next();
         this[REACTIVE_KIT].off('access', hdl);
 
+        yield { value: ns, vecs };
+
         const dVecs: [object, string][] = [];
         const dhdl = (tgt: object, prop: string) => {
             dVecs.push([tgt, prop]);
@@ -489,7 +482,7 @@ export class CivComponent extends EventTarget {
         this[REACTIVE_KIT].on('access', dhdl);
 
         for (const x of it) {
-            yield { value: x, vecs: vecs.concat(dVecs) };
+            yield { value: x, vecs: Array.from(dVecs) };
             dVecs.length = 0;
         }
     }
@@ -514,7 +507,160 @@ export class CivComponent extends EventTarget {
     }
 
     protected _handleSubtreeRenderTask(task: SubtreeRenderTask) {
+        const nsObj: Record<string, any> = Object.create(task.ns || null);
+        for (const identifier of task.injectNs) {
+            Reflect.set(nsObj, identifier, undefined);
+        }
+        const it = this._evaluateForExpr(task.expr, nsObj);
 
+        const initialYield = it.next().value;
+        if (!initialYield) {
+            throw new Error(`Invalid *for expression: ${task.expr} in component ${identify(this.constructor as typeof CivComponent)}`);
+        }
 
+        let isReactive = false;
+        if (initialYield.vecs.length) {
+            isReactive = true;
+            this._setupTaskRecurrence(task, initialYield.vecs);
+        }
+        const previousTrie = this._subtreeRenderTaskTrack.get(task);
+        const nextTrie = new TrieNode<any, Element>(null);
+
+        const [parent, start, end] = task.anchor;
+
+        const newSequence: Node[] = [];
+
+        for (const _x of it) {
+            const cloneNs = Object.create(task.ns || null);
+            Object.assign(cloneNs, nsObj);
+            const series = task.injectNs.map((x) => Reflect.get(cloneNs, x));
+
+            const n = previousTrie?.seek(...series);
+            if (n?.found && n.payload) {
+                nextTrie.insert(...series).payload = n.payload;
+                newSequence.push(n.payload);
+                continue;
+            }
+
+            const subTreeElem = task.tpl.cloneNode(true) as Element;
+            this._renderTemplateElem(subTreeElem, cloneNs);
+            parent.insertBefore(subTreeElem, end);
+            nextTrie.insert(...series).payload = subTreeElem;
+            newSequence.push(subTreeElem);
+        }
+
+        let anchorNode: Node | null = start.nextSibling;
+
+        for (const x of newSequence) {
+            parent.insertBefore(x, anchorNode);
+            anchorNode = x;
+        }
+
+        let itNode;
+        while (itNode = anchorNode?.nextSibling) {
+            if (itNode === end) {
+                break;
+            }
+            itNode.remove();
+        }
+
+        if (isReactive) {
+            this._subtreeRenderTaskTrack.set(task, nextTrie);
+        } else {
+            this._subtreeRenderTaskTrack.delete(task);
+        }
+    }
+
+    protected _handleComponentRenderTask(task: ComponentRenderTask) {
+        const compCls = this._components[task.comp];
+        if (!compCls) {
+            return;
+        }
+        const el = task.sub;
+
+        const instance = Reflect.construct(compCls, []) as CivComponent;
+        const targetElement = instance.element;
+        this._elToComponentMap.set(el, instance);
+
+        const attributes = el.attributes;
+        for (let i = attributes.length - 1; i >= 0; i--) {
+            const attr = attributes[i];
+            targetElement.setAttributeNode(attr);
+        }
+
+        const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
+        if (defaultSlot) {
+            defaultSlot.classList.add(`${identify(compCls)}__slotted`);
+            el.childNodes.forEach((node) => {
+                defaultSlot.appendChild(node);
+            });
+        }
+        const namedTemplates = el.querySelectorAll(`:scope > template[for]`);
+        if (namedTemplates.length) {
+            namedTemplates.forEach((el) => el.remove());
+        }
+
+        namedTemplates.forEach((template) => {
+            const forAttr = template.getAttribute('for');
+            if (!forAttr) {
+                return;
+            }
+            const targetSlot = targetElement.querySelector<HTMLElement>(`slot[name="${forAttr}"]`);
+            if (!targetSlot) {
+                return;
+            }
+            targetSlot.classList.add(`${identify(compCls)}__slotted`);
+            template.childNodes.forEach((node) => {
+                targetSlot.appendChild(node);
+            });
+        });
+    }
+
+    protected _handleAttrSyncTask(task: AttrSyncTask) {
+        const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
+        task.attr.value = value as any;
+        this._setupTaskRecurrence(task, vecs);
+    }
+
+    protected _handlePropSyncTask(task: PropSyncTask) {
+        const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
+        if (this._elToComponentMap.has(task.tgt as any)) {
+            task.tgt = this._elToComponentMap.get(task.tgt as any) as any;
+        }
+        Reflect.set(task.tgt, task.prop, value);
+        this._setupTaskRecurrence(task, vecs);
+    }
+
+    protected _handleTplSyncTask(task: TplSyncTask) {
+        const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
+        this._setupTaskRecurrence(task, vecs);
+        task.text.nodeValue = value as string;
+    }
+
+    protected _handleSubtreeToggleTask(task: SubtreeToggleTask) {
+        const allVecs = [];
+        let active = false;
+        const currentAnchor = this._taskToNodeMap.get(task) || task.anchor;
+        for (const [expr, el] of task.exprGroup) {
+            const { vecs: vecs, value } = this._evaluateExpr(expr, task.ns);
+            allVecs.push(...vecs);
+            if (value) {
+                currentAnchor.parentNode?.replaceChild(el, currentAnchor);
+                this._taskToNodeMap.set(task, el);
+                active = true;
+                break;
+            }
+        }
+
+        if (!active) {
+            currentAnchor.parentNode?.replaceChild(task.anchor, currentAnchor);
+            this._taskToNodeMap.set(task, task.anchor);
+        }
+        this._setupTaskRecurrence(task, allVecs);
+    }
+
+    protected _handleEventBridgeTask(task: EventBridgeTask) {
+        const [eventName, ...traits] = task.event.split('.');
+        
     }
 }

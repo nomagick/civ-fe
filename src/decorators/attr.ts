@@ -72,31 +72,8 @@ export function ReactiveAttr<T extends ReactivityHost>() {
             ...config,
             initializers: [
                 ...(config?.initializers || []),
-                function (this: T & ReactiveAttrMixin & { [REACTIVE_ATTR_OBSERVER]?: MutationObserver }) {
-                    if (!this.hasOwnProperty(REACTIVE_ATTR_OBSERVER)) {
-                        this[REACTIVE_ATTR_OBSERVER] = new MutationObserver((mutations) => {
-                            for (const x of mutations) {
-                                if (x.type === 'attributes') {
-                                    const attrName = x.attributeName;
-                                    if (attrName && this[REACTIVE_ATTR_MAPPING][attrName]) {
-                                        const v = this.element.getAttribute(attrName);
-                                        for (const key of this[REACTIVE_ATTR_MAPPING][attrName]) {
-                                            if (this.hasOwnProperty(key)) {
-                                                Reflect.set(this[REACTIVE_KIT], key, v);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                        this[REACTIVE_ATTR_OBSERVER].observe(this.element, {
-                            subtree: false,
-                            attributes: true,
-                            attributeFilter: Object.keys(this[REACTIVE_ATTR_MAPPING]),
-                            attributeOldValue: true
-                        });
-                        finalizationRegistry.register(this, this[REACTIVE_ATTR_OBSERVER], this);
-                    }
+                function (this: T & ReactiveAttrMixin & ReactivityHost) {
+                    setupAttrObserver.call(this as any);
                 }
             ]
         })(target, key, _descriptor);
@@ -104,3 +81,36 @@ export function ReactiveAttr<T extends ReactivityHost>() {
     };
 }
 
+export function setupAttrObserver(this: ReactivityHost & ReactiveAttrMixin) {
+    if (!this.hasOwnProperty(REACTIVE_ATTR_OBSERVER)) {
+        const observedAttributes = new Set((this.constructor as any).observedAttributes as string[] || []);
+        this[REACTIVE_ATTR_OBSERVER] = new MutationObserver((mutations) => {
+            for (const x of mutations) {
+                if (x.type === 'attributes') {
+                    const attrName = x.attributeName;
+                    if (!attrName) {
+                        continue;
+                    }
+                    const v = this.element.getAttribute(attrName);
+                    if (observedAttributes.has(attrName) && 'attributeChangedCallback' in this) {
+                        Reflect.apply(this.attributeChangedCallback as any, this, [attrName, x.oldValue, v])
+                    }
+                    if (this[REACTIVE_ATTR_MAPPING][attrName]) {
+                        for (const key of this[REACTIVE_ATTR_MAPPING][attrName]) {
+                            if (this.hasOwnProperty(key)) {
+                                Reflect.set(this[REACTIVE_KIT], key, v);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        this[REACTIVE_ATTR_OBSERVER].observe(this.element, {
+            subtree: false,
+            attributes: true,
+            attributeFilter: Object.keys(this[REACTIVE_ATTR_MAPPING]),
+            attributeOldValue: true
+        });
+        finalizationRegistry.register(this, this[REACTIVE_ATTR_OBSERVER], this);
+    }
+}
