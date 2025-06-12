@@ -21,6 +21,7 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
     protected managedProxyMap = new WeakMap<any, any>();
 
     protected arrayOptimizationKit = this.getArrayOptimizationKit();
+    protected foreignRevokers = new Map<ReactiveKit<any>, AbortController>();
 
     constructor(target: T, handlers: ProxyHandler<T> = {}) {
         super();
@@ -217,5 +218,37 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
         };
     }
 
+    connect<P extends object>(foreign: ReactiveKit<P>) {
+        if (!foreign || !(foreign instanceof ReactiveKit)) {
+            throw new TypeError('Invalid ReactiveKit instance provided');
+        }
+
+        if (this.foreignRevokers.has(foreign)) {
+            return this.foreignRevokers.get(foreign);
+        }
+        const abortCtl = new AbortController();
+        this.foreignRevokers.set(foreign, abortCtl);
+        for (const event of ['access', 'assign', 'delete', 'define', 'array-op']) {
+            foreign.addEventListener(event, (e) => {
+                this.emit(event, ...(e as CustomEvent).detail);
+            }, { signal: abortCtl.signal });
+        }
+
+        return abortCtl;
+    }
+
+    disconnect<P extends object>(foreign: ReactiveKit<P>) {
+        const abortCtl = this.foreignRevokers.get(foreign);
+        if (abortCtl) {
+            this.foreignRevokers.delete(foreign);
+            abortCtl.abort();
+        }
+    }
+
+    disconnectAll() {
+        for (const foreign of this.foreignRevokers.keys()) {
+            this.disconnect(foreign);
+        }
+    }
 
 }
