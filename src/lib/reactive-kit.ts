@@ -224,7 +224,7 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
         }
 
         if (this.foreignRevokers.has(foreign)) {
-            return this.foreignRevokers.get(foreign);
+            return this.foreignRevokers.get(foreign)!;
         }
         const abortCtl = new AbortController();
         this.foreignRevokers.set(foreign, abortCtl);

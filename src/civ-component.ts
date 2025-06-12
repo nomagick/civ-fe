@@ -33,6 +33,13 @@ export class CivComponent extends EventTarget {
         Reflect.apply(activateReactivity, this, []);
     }
 
+    foreign(eventTarget: ReactivityHost) {
+        const abortCtl = this[REACTIVE_KIT].connect(eventTarget[REACTIVE_KIT]);
+        this._revokers.add(abortCtl);
+        
+        return abortCtl;
+    }
+
     protected _cleanup() {
         for (const x of this._revokers) {
             x.abort();
