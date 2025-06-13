@@ -1,6 +1,6 @@
-import { runOncePerClass } from "./decorators/once";
-import { REACTIVE_TEMPLATE_DOM, ReactiveTemplateMixin, identify } from "./decorators/dom-template";
-import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./decorators/reactive";
+import { runOncePerClass } from "./lib/once";
+import { REACTIVE_TEMPLATE_DOM, ReactiveTemplateMixin, identify } from "./lib/dom-template";
+import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./lib/reactive";
 import {
     attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
     namespaceInjectionArgName, significantFlagClass, subtreeTemplateFlagClass,
@@ -10,10 +10,11 @@ import { GeneratorFunction } from "./utils/lang";
 import { parseTemplate } from "./utils/template-parser";
 import { AttrSyncTask, ComponentRenderTask, DomMaintenanceTask, DomMaintenanceTaskType, EventBridgeTask, PropSyncTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask } from "./dom";
 import { TrieNode } from "./lib/trie";
-import { ReactiveAttrMixin, setupAttrObserver } from "./decorators/attr";
+import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EventEmitter } from "lib/event-emitter";
 
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin { }
+export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
 
 const forExpRegex = /^(?<exp1>.+?)\s+(?<typ>in|of)\s+(?<exp2>.+)$/;
 let serial = 1;
@@ -28,14 +29,18 @@ export class CivComponent extends EventEmitter {
     protected _revokers: Set<AbortController> = new Set();
     protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
     protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<any, Element>> = new WeakMap();
-    protected _elToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
+    protected _placeHolderElementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
     protected _taskToNodeMap: WeakMap<DomMaintenanceTask, Node> = new WeakMap();
+    protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
+    protected _taskToRevokerMap: WeakMap<DomMaintenanceTask, AbortController> = new WeakMap();
+    protected _subTreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
 
     constructor() {
         super();
         Reflect.apply(initReactivity, this, []);
         this._digestTemplateMagicExpressions();
         this._activateTemplate();
+        elementToComponentMap.set(this.element, this);
         if ('observedAttributes' in this.constructor) {
             // @ts-ignore
             setupAttrObserver.call(this);
@@ -217,6 +222,26 @@ export class CivComponent extends EventEmitter {
         return this.element;
     }
 
+    protected _trackTask(task: DomMaintenanceTask, hostElem: Element) {
+        this._pendingTasks.push(task);
+        this._taskToHostElementMap.set(task, hostElem);
+
+        let taskSet = this._subTreeTaskTrack.get(hostElem);
+        if (!taskSet) {
+            taskSet = new Set();
+            this._subTreeTaskTrack.set(hostElem, taskSet);
+        }
+        taskSet.add(task);
+    }
+
+    protected _untrackTask(task: DomMaintenanceTask) {
+        this._taskToRevokerMap.delete(task);
+        const hostElem = this._taskToHostElementMap.get(task);
+        if (hostElem) {
+            this._subTreeTaskTrack.get(hostElem)?.delete(task);
+        }
+    }
+
     protected _renderTemplateElem(elem: Element = this.element, ns?: Record<string, any>) {
         const elemTraitsLookup = this._elemTraitsLookup;
         const expressionMap = this._expressionMap;
@@ -242,32 +267,32 @@ export class CivComponent extends EventEmitter {
             if (!el.parentNode) {
                 throw new Error()
             }
-            this._pendingTasks.push({
+
+            this._trackTask({
                 type: DomMaintenanceTaskType.SUBTREE_RENDER,
                 tpl: el,
                 anchor: [parent, start, end],
                 expr,
                 injectNs,
                 ns
-            });
+            }, elem);
         }
         const componentPlaceHolderElements = new Set<Element>();
 
         elem.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
             componentPlaceHolderElements.add(el);
-            el.classList.remove(componentFlagClass);
             const elSerial = el.getAttribute(significantFlagClass) || '';
             if (!elSerial) {
                 throw new Error(`Element with component flag does not have a significant flag class in component ${identify(this.constructor as typeof CivComponent)}`);
             }
             const traits = elemTraitsLookup.get(elSerial) || [];
-            this._pendingTasks.push({
+            this._trackTask({
                 type: DomMaintenanceTaskType.COMPONENT_RENDER,
                 sub: el,
                 comp: el.tagName,
                 traits,
                 ns
-            });
+            }, elem);
         });
 
         elem.querySelectorAll(`.${significantFlagClass}`).forEach((el) => {
@@ -286,45 +311,45 @@ export class CivComponent extends EventEmitter {
                             attrNode = document.createAttribute(attrName);
                             el.setAttributeNode(attrNode);
                         }
-                        this._pendingTasks.push({
+                        this._trackTask({
                             type: DomMaintenanceTaskType.ATTR_SYNC,
                             attr: attrNode,
                             expr,
                             ns,
-                        });
+                        }, elem);
                         break;
                     }
                     case 'prop': {
                         const [propName, expr] = args;
-                        this._pendingTasks.push({
+                        this._trackTask({
                             type: DomMaintenanceTaskType.PROP_SYNC,
                             tgt: el,
                             prop: propName,
                             expr,
                             ns,
-                        });
+                        }, elem);
                         break;
                     }
                     case 'event': {
                         const [eventName, expr] = args;
-                        this._pendingTasks.push({
+                        this._trackTask({
                             type: DomMaintenanceTaskType.EVENT_BRIDGE,
                             tgt: el,
                             event: eventName,
                             expr,
                             ns,
-                        });
+                        }, elem);
                         break;
                     }
                     case 'documentEvent': {
                         const [eventName, expr] = args;
-                        this._pendingTasks.push({
+                        this._trackTask({
                             type: DomMaintenanceTaskType.EVENT_BRIDGE,
                             tgt: document,
                             event: eventName,
                             expr,
                             ns,
-                        });
+                        }, elem);
                         break;
                     }
                     case 'if': {
@@ -368,34 +393,34 @@ export class CivComponent extends EventEmitter {
                         for (const [_expr, el] of exprGroup) {
                             el.remove();
                         }
-                        this._pendingTasks.push({
+                        this._trackTask({
                             type: DomMaintenanceTaskType.SUBTREE_TOGGLE,
                             anchor: placeHolder,
                             exprGroup,
                             ns,
-                        });
+                        }, elem);
                         break;
                     }
                     case 'html': {
                         const [expr] = args;
-                        this._pendingTasks.push({
+                        this._trackTask({
                             type: DomMaintenanceTaskType.PROP_SYNC,
                             tgt: el,
                             prop: 'innerHTML',
                             expr,
                             ns,
-                        });
+                        }, elem);
                         break;
                     }
                     case 'bind': {
                         const [expr] = args;
-                        this._pendingTasks.push({
+                        this._trackTask({
                             type: DomMaintenanceTaskType.PROP_SYNC,
                             tgt: el,
                             prop: 'textContent',
                             expr,
                             ns,
-                        });
+                        }, elem);
                         break;
                     }
                     case 'tpl': {
@@ -411,12 +436,12 @@ export class CivComponent extends EventEmitter {
                             }
 
                             if (expressionMap.has(node.textContent)) {
-                                this._pendingTasks.push({
+                                this._trackTask({
                                     type: DomMaintenanceTaskType.TPL_SYNC,
                                     text: node,
                                     expr: node.textContent,
                                     ns,
-                                });
+                                }, elem);
                             }
                         });
 
@@ -427,11 +452,15 @@ export class CivComponent extends EventEmitter {
                     }
                 }
             }
+
+            // TODO: check if it makes sense to keep these
+            el.classList.remove(significantFlagClass);
+            el.removeAttribute(significantFlagClass);
         });
 
     }
 
-    protected _evaluateExpr(expr: string, ns: Record<string, any> = Object.create(null)) {
+    protected _evaluateExpr(expr: string, ns: Record<string, any> = Object.create(null), noListen?: any) {
         const fn = this._expressionMap.get(expr);
         if (!fn) {
             throw new Error(`Cannot find eval function for expression: ${expr}`);
@@ -439,6 +468,10 @@ export class CivComponent extends EventEmitter {
 
         if (fn.name.startsWith('*')) {
             throw new Error(`Cannot evaluate generator function: ${fn.name}. Use _evaluateForExpr instead.`);
+        }
+
+        if (noListen) {
+            return { value: fn.call(this, ns), vecs: [] };
         }
 
         const vecs: [object, string][] = [];
@@ -488,7 +521,16 @@ export class CivComponent extends EventEmitter {
     }
 
     protected _setupTaskRecurrence(task: DomMaintenanceTask, vecs: [object, string][]) {
+        this._taskToRevokerMap.get(task)?.abort();
         const abortCtl = new AbortController();
+        if (!vecs.length) {
+            this._untrackTask(task);
+
+            abortCtl.abort();
+
+            return abortCtl;
+        }
+
         const handler = () => {
             abortCtl.abort('recur');
             this._pendingTasks.push(task);
@@ -502,6 +544,7 @@ export class CivComponent extends EventEmitter {
             }
             evtgt.addEventListener(prop, handler, { signal: abortCtl.signal, once: true });
         }
+        this._taskToRevokerMap.set(task, abortCtl);
 
         return abortCtl;
     }
@@ -552,6 +595,10 @@ export class CivComponent extends EventEmitter {
         let anchorNode: Node | null = start.nextSibling;
 
         for (const x of newSequence) {
+            if (x.parentElement !== parent) {
+                // Element exists but moved to another place
+                continue;
+            }
             parent.insertBefore(x, anchorNode);
             anchorNode = x;
         }
@@ -562,16 +609,37 @@ export class CivComponent extends EventEmitter {
                 break;
             }
             itNode.remove();
+            const taskSet = this._subTreeTaskTrack.get(itNode as Element);
+            if (taskSet) {
+                for (const t of taskSet) {
+                    const revoker = this._taskToRevokerMap.get(t);
+                    revoker?.abort();
+                    this._taskToRevokerMap.delete(t);
+                }
+            }
+            this._subTreeTaskTrack.delete(itNode as Element);
+
+            if (itNode instanceof Element) {
+                itNode.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
+                    const comp = elementToComponentMap.get(el);
+                    if (comp) {
+                        comp.disconnectedCallback();
+                        comp._cleanup();
+                    }
+                });
+            }
         }
 
         if (isReactive) {
             this._subtreeRenderTaskTrack.set(task, nextTrie);
         } else {
             this._subtreeRenderTaskTrack.delete(task);
+            this._untrackTask(task);
         }
     }
 
     protected _handleComponentRenderTask(task: ComponentRenderTask) {
+        this._untrackTask(task);
         const compCls = this._components[task.comp];
         if (!compCls) {
             return;
@@ -580,7 +648,7 @@ export class CivComponent extends EventEmitter {
 
         const instance = Reflect.construct(compCls, []) as CivComponent;
         const targetElement = instance.element;
-        this._elToComponentMap.set(el, instance);
+        this._placeHolderElementToComponentMap.set(el, instance);
 
         const attributes = el.attributes;
         for (let i = attributes.length - 1; i >= 0; i--) {
@@ -595,6 +663,15 @@ export class CivComponent extends EventEmitter {
                 defaultSlot.appendChild(node);
             });
         }
+
+        const taskSet = this._subTreeTaskTrack.get(el);
+        if (taskSet) {
+            this._subTreeTaskTrack.set(targetElement, taskSet);
+            for (const t of taskSet) {
+                this._taskToHostElementMap.set(t, targetElement);
+            }
+        }
+
         const namedTemplates = el.querySelectorAll(`:scope > template[for]`);
         if (namedTemplates.length) {
             namedTemplates.forEach((el) => el.remove());
@@ -614,6 +691,11 @@ export class CivComponent extends EventEmitter {
                 targetSlot.appendChild(node);
             });
         });
+
+        el.replaceWith(targetElement);
+        if (el.isConnected) {
+            instance.connectedCallback();
+        }
     }
 
     protected _handleAttrSyncTask(task: AttrSyncTask) {
@@ -624,8 +706,8 @@ export class CivComponent extends EventEmitter {
 
     protected _handlePropSyncTask(task: PropSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
-        if (this._elToComponentMap.has(task.tgt as any)) {
-            task.tgt = this._elToComponentMap.get(task.tgt as any) as any;
+        if (this._placeHolderElementToComponentMap.has(task.tgt as any)) {
+            task.tgt = this._placeHolderElementToComponentMap.get(task.tgt as any) as any;
         }
         Reflect.set(task.tgt, task.prop, value);
         this._setupTaskRecurrence(task, vecs);
@@ -661,6 +743,22 @@ export class CivComponent extends EventEmitter {
 
     protected _handleEventBridgeTask(task: EventBridgeTask) {
         const [eventName, ...traits] = task.event.split('.');
-        
+
+        const opts: any = {};
+        for (const x of traits) {
+            opts[x] = true;
+        }
+
+        task.tgt.addEventListener(eventName, (e: Event) => {
+            const ns = Object.create(task.ns || null);
+            ns.$event = e;
+            const { value } = this._evaluateExpr(task.expr, ns, true);
+
+            if (typeof value === 'function') {
+                value.call(this, e);
+            }
+        }, opts);
+
+        this._untrackTask(task);
     }
 }

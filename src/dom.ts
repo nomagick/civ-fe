@@ -1,4 +1,5 @@
-import type { ReactivityHost } from "./decorators/reactive";
+import { Traits } from "protocol";
+import type { ReactivityHost } from "./lib/reactive";
 
 export enum DomMaintenanceTaskType {
     ATTR_SYNC = 'attrSync',
@@ -60,7 +61,7 @@ export interface ComponentRenderTask {
     type: DomMaintenanceTaskType.COMPONENT_RENDER;
     sub: Element;
     comp: string;
-    traits: string[][];
+    traits: Traits;
     ns?: Record<string, unknown>;
 }
 

@@ -1,4 +1,4 @@
-import { ReactiveKit } from "../lib/reactive-kit";
+import { ReactiveKit } from "./reactive-kit";
 
 export const REACTIVE_KIT = Symbol('REACTIVE_KIT');
 export const REACTIVE_CFG = Symbol('REACTIVE_CFG');
