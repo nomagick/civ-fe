@@ -72,6 +72,70 @@ export class CivComponent extends EventEmitter {
         this.emit('attributeChange', name, oldValue, newValue);
     }
 
+    replaceElement(el: Element) {
+        const targetElement = this.element;
+        const childComponents: CivComponent[] = [];
+        targetElement.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
+            const comp = elementToComponentMap.get(el);
+            if (comp) {
+                childComponents.push(comp);
+            }
+        });
+
+        const attributes = el.attributes;
+        for (let i = attributes.length - 1; i >= 0; i--) {
+            const attr = attributes[i];
+            targetElement.setAttributeNode(attr);
+        }
+
+        const compCls = this.constructor as typeof CivComponent;
+        const clsId = identify(compCls);
+
+        const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
+        if (defaultSlot) {
+            defaultSlot.classList.add(`${clsId}__slotted`);
+            el.childNodes.forEach((node) => {
+                defaultSlot.appendChild(node);
+            });
+        }
+
+        const taskSet = this._subtreeTaskTrack.get(el);
+        if (taskSet) {
+            this._subtreeTaskTrack.set(targetElement, taskSet);
+            for (const t of taskSet) {
+                this._taskToHostElementMap.set(t, targetElement);
+            }
+        }
+
+        const namedTemplates = el.querySelectorAll(`:scope > template[for]`);
+        if (namedTemplates.length) {
+            namedTemplates.forEach((el) => el.remove());
+        }
+
+        namedTemplates.forEach((template) => {
+            const forAttr = template.getAttribute('for');
+            if (!forAttr) {
+                return;
+            }
+            const targetSlot = targetElement.querySelector<HTMLElement>(`slot[name="${forAttr}"]`);
+            if (!targetSlot) {
+                return;
+            }
+            targetSlot.classList.add(`${clsId}__slotted`);
+            template.childNodes.forEach((node) => {
+                targetSlot.appendChild(node);
+            });
+        });
+
+        el.replaceWith(targetElement);
+        if (targetElement.isConnected) {
+            this.connectedCallback();
+            childComponents.forEach((x) => x.connectedCallback());
+        }
+
+        return targetElement;
+    }
+
     protected _cleanup() {
         for (const x of this._revokers) {
             x.abort();
@@ -676,57 +740,9 @@ export class CivComponent extends EventEmitter {
             return;
         }
         const el = task.sub;
-
         const instance = Reflect.construct(compCls, []) as CivComponent;
-        const targetElement = instance.element;
         this._placeHolderElementToComponentMap.set(el, instance);
-
-        const attributes = el.attributes;
-        for (let i = attributes.length - 1; i >= 0; i--) {
-            const attr = attributes[i];
-            targetElement.setAttributeNode(attr);
-        }
-
-        const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
-        if (defaultSlot) {
-            defaultSlot.classList.add(`${identify(compCls)}__slotted`);
-            el.childNodes.forEach((node) => {
-                defaultSlot.appendChild(node);
-            });
-        }
-
-        const taskSet = this._subtreeTaskTrack.get(el);
-        if (taskSet) {
-            this._subtreeTaskTrack.set(targetElement, taskSet);
-            for (const t of taskSet) {
-                this._taskToHostElementMap.set(t, targetElement);
-            }
-        }
-
-        const namedTemplates = el.querySelectorAll(`:scope > template[for]`);
-        if (namedTemplates.length) {
-            namedTemplates.forEach((el) => el.remove());
-        }
-
-        namedTemplates.forEach((template) => {
-            const forAttr = template.getAttribute('for');
-            if (!forAttr) {
-                return;
-            }
-            const targetSlot = targetElement.querySelector<HTMLElement>(`slot[name="${forAttr}"]`);
-            if (!targetSlot) {
-                return;
-            }
-            targetSlot.classList.add(`${identify(compCls)}__slotted`);
-            template.childNodes.forEach((node) => {
-                targetSlot.appendChild(node);
-            });
-        });
-
-        el.replaceWith(targetElement);
-        if (el.isConnected) {
-            instance.connectedCallback();
-        }
+        instance.replaceElement(el);
     }
 
     protected _handleAttrSyncTask(task: AttrSyncTask) {
