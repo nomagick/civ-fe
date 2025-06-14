@@ -19,16 +19,19 @@ export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap
 const forExpRegex = /^(?<exp1>.+?)\s+(?<typ>in|of)\s+(?<exp2>.+)$/;
 let serial = 1;
 
+type ExprFn = (this: CivComponent, _ns: Record<string, unknown>) => unknown;
+type GenExprFn = (this: CivComponent, _ns: Record<string, unknown>) => Generator;
+
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
-    static expressionMap: Map<string, (this: CivComponent, _ns: Record<string, unknown>) => unknown> = new Map();
+    static expressionMap: Map<string, ExprFn | GenExprFn> = new Map();
     static elemTraitsLookup: Map<string, Traits> = new Map();
     readonly serial = serial++;
     element!: Element;
     protected _pendingTasks: DomMaintenanceTask[] = [];
     protected _revokers: Set<AbortController> = new Set();
     protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
-    protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<any, Element>> = new WeakMap();
+    protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<object, Element>> = new WeakMap();
     protected _subtreeArrayRenderTrack: WeakMap<Array<unknown>, SubtreeRenderTask> = new WeakMap();
     protected _placeHolderElementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
     protected _taskToNodeMap: WeakMap<DomMaintenanceTask, Node> = new WeakMap();
@@ -197,7 +200,7 @@ export class CivComponent extends EventEmitter {
                     continue;
                 }
 
-                const exprFn = new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}].join(''); } }`) as any;
+                const exprFn = new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}].join(''); } }`) as ExprFn;
                 expressionMap.set(tpl, exprFn);
                 const parentTraits = elemTraitsMap.get(elem.parentElement!) || [];
                 parentTraits.push(['tpl']);
@@ -238,14 +241,14 @@ export class CivComponent extends EventEmitter {
                     }
                     elem.classList.add(subtreeTemplateFlagClass);
                     const { expr1, typ, expr2 } = matched.groups!;
-                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { const __iterable_ = ${expr2}; yield __iterable_; for (${expr1} ${typ} __iterable_}) { yield ${namespaceInjectionArgName}; } } }`) as any;
+                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { const __iterable_ = ${expr2}; yield __iterable_; for (${expr1} ${typ} __iterable_}) { yield ${namespaceInjectionArgName}; } } }`) as unknown as GenExprFn;
                     Object.defineProperty(genFn, name, {
                         value: `*${genFn.name}`,
                         configurable: true
                     });
                     expressionMap.set(expr, genFn);
                 } else {
-                    expressionMap.set(expr, new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return ${expr}; } }`) as any);
+                    expressionMap.set(expr, new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return ${expr}; } }`) as ExprFn);
                 }
             }
             for (const attr of magicAttrs) {
@@ -307,7 +310,7 @@ export class CivComponent extends EventEmitter {
         }
     }
 
-    protected _renderTemplateElem(elem: Element = this.element, ns?: Record<string, any>) {
+    protected _renderTemplateElem(elem: Element = this.element, ns?: Record<string, unknown>) {
         const elemTraitsLookup = this._elemTraitsLookup;
         const expressionMap = this._expressionMap;
         let el;
@@ -525,7 +528,7 @@ export class CivComponent extends EventEmitter {
 
     }
 
-    protected _evaluateExpr(expr: string, ns: Record<string, any> = Object.create(null), noListen?: any) {
+    protected _evaluateExpr(expr: string, ns: Record<string, unknown> = Object.create(null), noListen?: unknown) {
         const fn = this._expressionMap.get(expr);
         if (!fn) {
             throw new Error(`Cannot find eval function for expression: ${expr}`);
@@ -551,8 +554,8 @@ export class CivComponent extends EventEmitter {
         return { value: r, vecs };
     }
 
-    protected *_evaluateForExpr(expr: string, ns: Record<string, any> = Object.create(null)) {
-        const fn = this._expressionMap.get(expr) as any;
+    protected *_evaluateForExpr(expr: string, ns: Record<string, unknown> = Object.create(null)) {
+        const fn = this._expressionMap.get(expr);
         if (!fn) {
             throw new Error(`Cannot find generator function for expression: ${expr}`);
         }
@@ -615,7 +618,7 @@ export class CivComponent extends EventEmitter {
     }
 
     protected _handleSubtreeRenderTask(task: SubtreeRenderTask) {
-        const nsObj: Record<string, any> = Object.create(task.ns || null);
+        const nsObj: Record<string, unknown> = Object.create(task.ns || null);
         for (const identifier of task.injectNs) {
             Reflect.set(nsObj, identifier, undefined);
         }
@@ -649,7 +652,7 @@ export class CivComponent extends EventEmitter {
         }
 
         const previousTrie = this._subtreeRenderTaskTrack.get(task);
-        const nextTrie = new TrieNode<any, Element>(equivalentIterable);
+        const nextTrie = new TrieNode<object, Element>(equivalentIterable as Iterable<unknown>);
 
         const [parent, start, end] = task.anchor;
 
@@ -747,14 +750,15 @@ export class CivComponent extends EventEmitter {
 
     protected _handleAttrSyncTask(task: AttrSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
-        task.attr.value = value as any;
+        // @ts-ignore
+        task.attr.value = value;
         this._setupTaskRecurrence(task, vecs);
     }
 
     protected _handlePropSyncTask(task: PropSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
-        if (this._placeHolderElementToComponentMap.has(task.tgt as any)) {
-            task.tgt = this._placeHolderElementToComponentMap.get(task.tgt as any) as any;
+        if (this._placeHolderElementToComponentMap.has(task.tgt as Element)) {
+            task.tgt = this._placeHolderElementToComponentMap.get(task.tgt as Element) as CivComponent;
         }
         Reflect.set(task.tgt, task.prop, value);
         this._setupTaskRecurrence(task, vecs);
@@ -791,7 +795,7 @@ export class CivComponent extends EventEmitter {
     protected _handleEventBridgeTask(task: EventBridgeTask) {
         const [eventName, ...traits] = task.event.split('.');
 
-        const opts: any = {};
+        const opts: Record<string, unknown> = {};
         for (const x of traits) {
             opts[x] = true;
         }

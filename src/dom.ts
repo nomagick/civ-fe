@@ -1,5 +1,5 @@
 import { Traits } from "protocol";
-import type { ReactivityHost } from "./lib/reactive";
+import type { CivComponent } from "civ-component";
 
 export enum DomMaintenanceTaskType {
     ATTR_SYNC = 'attrSync',
@@ -20,7 +20,7 @@ export interface AttrSyncTask {
 
 export interface PropSyncTask {
     type: DomMaintenanceTaskType.PROP_SYNC;
-    tgt: ReactivityHost | Element;
+    tgt: CivComponent | Element;
     prop: string;
     expr: string;
     ns?: Record<string, unknown>;

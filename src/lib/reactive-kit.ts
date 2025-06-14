@@ -219,6 +219,7 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
 
             return mangled;
         }
+
         const arrayOptimizationKit: any = {};
         for (const method of methodsToPatch) {
             arrayOptimizationKit[method] = mangle(method);

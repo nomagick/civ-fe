@@ -1,5 +1,5 @@
 
-export const GeneratorFunction = function* () { }.constructor as { new(...args: string[]): Generator };
+export const GeneratorFunction = function* () { }.constructor as { new(...args: any[]): Generator<any, any, any> };
 
 // Functional approach alternative
 export function extractForLoopTokens(forExpression: string): string[] {

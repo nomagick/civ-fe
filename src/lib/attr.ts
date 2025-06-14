@@ -73,7 +73,8 @@ export function ReactiveAttr<T extends ReactivityHost>() {
             initializers: [
                 ...(config?.initializers || []),
                 function (this: T & ReactiveAttrMixin & ReactivityHost) {
-                    setupAttrObserver.call(this as any);
+                    // @ts-ignore
+                    setupAttrObserver.call(this);
                 }
             ]
         })(target, key, _descriptor);
@@ -83,7 +84,7 @@ export function ReactiveAttr<T extends ReactivityHost>() {
 
 export function setupAttrObserver(this: ReactivityHost & ReactiveAttrMixin) {
     if (!this.hasOwnProperty(REACTIVE_ATTR_OBSERVER)) {
-        const observedAttributes = new Set((this.constructor as any).observedAttributes as string[] || []);
+        const observedAttributes = new Set(Reflect.get(this.constructor, 'observedAttributes') || []);
         this[REACTIVE_ATTR_OBSERVER] = new MutationObserver((mutations) => {
             for (const x of mutations) {
                 if (x.type === 'attributes') {
@@ -93,7 +94,8 @@ export function setupAttrObserver(this: ReactivityHost & ReactiveAttrMixin) {
                     }
                     const v = this.element.getAttribute(attrName);
                     if (observedAttributes.has(attrName) && 'attributeChangedCallback' in this) {
-                        Reflect.apply(this.attributeChangedCallback as any, this, [attrName, x.oldValue, v])
+                        // @ts-ignore
+                        Reflect.apply(this.attributeChangedCallback, this, [attrName, x.oldValue, v])
                     }
                     if (this[REACTIVE_ATTR_MAPPING][attrName]) {
                         for (const key of this[REACTIVE_ATTR_MAPPING][attrName]) {
@@ -101,7 +103,7 @@ export function setupAttrObserver(this: ReactivityHost & ReactiveAttrMixin) {
                                 Reflect.set(this[REACTIVE_KIT], key, v);
                             }
                         }
-                    }
+                    }``
                 }
             }
         });
