@@ -13,6 +13,15 @@ function isObject(obj: any) {
 }
 
 const globalProxyRevMap = new WeakMap<any, any>();
+
+export function unwrap<T extends object>(thing: T): T {
+    if (globalProxyRevMap.has(thing as any)) {
+        return globalProxyRevMap.get(thing as any);
+    }
+
+    return thing;
+}
+
 export class ReactiveKit<T extends object = any> extends EventEmitter {
     proxy!: T;
     target: T;
@@ -30,7 +39,9 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             ...handlers,
             get: (tgt, p, receiver) => {
                 const val: any = Reflect.get(tgt, p, receiver);
-                this.emit('access', tgt, p, val);
+                if (typeof p === 'string') {
+                    this.emit('access', tgt, p, val);
+                }
 
                 const cached = this.managedProxyMap.get(val);
                 if (cached) {

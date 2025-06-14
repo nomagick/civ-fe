@@ -29,11 +29,12 @@ export class CivComponent extends EventEmitter {
     protected _revokers: Set<AbortController> = new Set();
     protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
     protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<any, Element>> = new WeakMap();
+    protected _subtreeArrayRenderTrack: WeakMap<Array<unknown>, SubtreeRenderTask> = new WeakMap();
     protected _placeHolderElementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
     protected _taskToNodeMap: WeakMap<DomMaintenanceTask, Node> = new WeakMap();
     protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
     protected _taskToRevokerMap: WeakMap<DomMaintenanceTask, AbortController> = new WeakMap();
-    protected _subTreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
+    protected _subtreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
 
     constructor() {
         super();
@@ -61,12 +62,12 @@ export class CivComponent extends EventEmitter {
     disconnectedCallback() {
         this.emit('disconnected');
     }
-    connectedMoveCallback() {
-        this.emit('connectedMove');
-    }
-    adoptedCallback() {
-        this.emit('adopted');
-    }
+    // connectedMoveCallback() {
+    //     this.emit('connectedMove');
+    // }
+    // adoptedCallback() {
+    //     this.emit('adopted');
+    // }
     attributeChangedCallback(name: string, oldValue: string, newValue: string) {
         this.emit('attributeChange', name, oldValue, newValue);
     }
@@ -172,8 +173,8 @@ export class CivComponent extends EventEmitter {
                         throw new Error(`Invalid expression for *for: ${expr}`);
                     }
                     elem.classList.add(subtreeTemplateFlagClass);
-                    const expr2 = matched.groups!.expr2;
-                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { yield ${expr2}; for (${expr}) { yield ${namespaceInjectionArgName}; } } }`) as any;
+                    const { expr1, typ, expr2 } = matched.groups!;
+                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { const __iterable_ = ${expr2}; yield __iterable_; for (${expr1} ${typ} __iterable_}) { yield ${namespaceInjectionArgName}; } } }`) as any;
                     Object.defineProperty(genFn, name, {
                         value: `*${genFn.name}`,
                         configurable: true
@@ -226,10 +227,10 @@ export class CivComponent extends EventEmitter {
         this._pendingTasks.push(task);
         this._taskToHostElementMap.set(task, hostElem);
 
-        let taskSet = this._subTreeTaskTrack.get(hostElem);
+        let taskSet = this._subtreeTaskTrack.get(hostElem);
         if (!taskSet) {
             taskSet = new Set();
-            this._subTreeTaskTrack.set(hostElem, taskSet);
+            this._subtreeTaskTrack.set(hostElem, taskSet);
         }
         taskSet.add(task);
     }
@@ -238,7 +239,7 @@ export class CivComponent extends EventEmitter {
         this._taskToRevokerMap.delete(task);
         const hostElem = this._taskToHostElementMap.get(task);
         if (hostElem) {
-            this._subTreeTaskTrack.get(hostElem)?.delete(task);
+            this._subtreeTaskTrack.get(hostElem)?.delete(task);
         }
     }
 
@@ -560,18 +561,36 @@ export class CivComponent extends EventEmitter {
         if (!initialYield) {
             throw new Error(`Invalid *for expression: ${task.expr} in component ${identify(this.constructor as typeof CivComponent)}`);
         }
-
+        let equivalentIterable = initialYield.value;
         let isReactive = false;
         if (initialYield.vecs.length) {
             isReactive = true;
             this._setupTaskRecurrence(task, initialYield.vecs);
+            let arrayVal;
+            if (Array.isArray(initialYield.value)) {
+                arrayVal = initialYield.value;
+            } else if (initialYield.value instanceof Iterator) {
+                const lastVec = initialYield.vecs.pop()!;
+                const bv = lastVec[0];
+                if (Array.isArray(bv)) {
+                    arrayVal = bv;
+                } else {
+                    initialYield.vecs.push(lastVec);
+                }
+            }
+            if (arrayVal) {
+                this._subtreeArrayRenderTrack.set(arrayVal, task);
+                equivalentIterable = arrayVal;
+            }
         }
+
         const previousTrie = this._subtreeRenderTaskTrack.get(task);
-        const nextTrie = new TrieNode<any, Element>(null);
+        const nextTrie = new TrieNode<any, Element>(equivalentIterable);
 
         const [parent, start, end] = task.anchor;
 
         const newSequence: Node[] = [];
+        const newElements: Element[] = [];
 
         for (const _x of it) {
             const cloneNs = Object.create(task.ns || null);
@@ -587,6 +606,7 @@ export class CivComponent extends EventEmitter {
 
             const subTreeElem = task.tpl.cloneNode(true) as Element;
             this._renderTemplateElem(subTreeElem, cloneNs);
+            newElements.push(subTreeElem);
             parent.insertBefore(subTreeElem, end);
             nextTrie.insert(...series).payload = subTreeElem;
             newSequence.push(subTreeElem);
@@ -609,7 +629,7 @@ export class CivComponent extends EventEmitter {
                 break;
             }
             itNode.remove();
-            const taskSet = this._subTreeTaskTrack.get(itNode as Element);
+            const taskSet = this._subtreeTaskTrack.get(itNode as Element);
             if (taskSet) {
                 for (const t of taskSet) {
                     const revoker = this._taskToRevokerMap.get(t);
@@ -617,7 +637,7 @@ export class CivComponent extends EventEmitter {
                     this._taskToRevokerMap.delete(t);
                 }
             }
-            this._subTreeTaskTrack.delete(itNode as Element);
+            this._subtreeTaskTrack.delete(itNode as Element);
 
             if (itNode instanceof Element) {
                 itNode.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
@@ -625,6 +645,17 @@ export class CivComponent extends EventEmitter {
                     if (comp) {
                         comp.disconnectedCallback();
                         comp._cleanup();
+                    }
+                });
+            }
+        }
+
+        if (parent.isConnected) {
+            for (const x of newElements) {
+                x.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
+                    const comp = elementToComponentMap.get(el);
+                    if (comp) {
+                        comp.connectedCallback();
                     }
                 });
             }
@@ -664,9 +695,9 @@ export class CivComponent extends EventEmitter {
             });
         }
 
-        const taskSet = this._subTreeTaskTrack.get(el);
+        const taskSet = this._subtreeTaskTrack.get(el);
         if (taskSet) {
-            this._subTreeTaskTrack.set(targetElement, taskSet);
+            this._subtreeTaskTrack.set(targetElement, taskSet);
             for (const t of taskSet) {
                 this._taskToHostElementMap.set(t, targetElement);
             }
