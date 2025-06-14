@@ -22,6 +22,8 @@ let serial = 1;
 type ExprFn = (this: CivComponent, _ns: Record<string, unknown>) => unknown;
 type GenExprFn = (this: CivComponent, _ns: Record<string, unknown>) => Generator;
 
+const ARRAY_OP_TRIGGER = '__civ_array_op_trigger__';
+
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
     static expressionMap: Map<string, ExprFn | GenExprFn> = new Map();
@@ -32,7 +34,6 @@ export class CivComponent extends EventEmitter {
     protected _revokers: Set<AbortController> = new Set();
     protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
     protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<object, Element>> = new WeakMap();
-    protected _subtreeArrayRenderTrack: WeakMap<Array<unknown>, SubtreeRenderTask> = new WeakMap();
     protected _placeHolderElementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
     protected _taskToNodeMap: WeakMap<DomMaintenanceTask, Node> = new WeakMap();
     protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
@@ -631,24 +632,26 @@ export class CivComponent extends EventEmitter {
         let equivalentIterable = initialYield.value;
         let isReactive = false;
         if (initialYield.vecs.length) {
+            const vecs = [...initialYield.vecs];
             isReactive = true;
-            this._setupTaskRecurrence(task, initialYield.vecs);
             let arrayVal;
             if (Array.isArray(initialYield.value)) {
                 arrayVal = initialYield.value;
             } else if (initialYield.value instanceof Iterator) {
-                const lastVec = initialYield.vecs.pop()!;
+                const lastVec = vecs.pop()!;
                 const bv = lastVec[0];
                 if (Array.isArray(bv)) {
                     arrayVal = bv;
                 } else {
-                    initialYield.vecs.push(lastVec);
+                    vecs.push(lastVec);
                 }
             }
             if (arrayVal) {
-                this._subtreeArrayRenderTrack.set(arrayVal, task);
+                vecs.push([arrayVal, ARRAY_OP_TRIGGER]);
                 equivalentIterable = arrayVal;
             }
+
+            this._setupTaskRecurrence(task, vecs);
         }
 
         const previousTrie = this._subtreeRenderTaskTrack.get(task);
@@ -811,5 +814,71 @@ export class CivComponent extends EventEmitter {
         }, opts);
 
         this._untrackTask(task);
+    }
+
+    protected _digestTasks() {
+        const thisBatch = [...this._pendingTasks];
+        const batchSet = new WeakSet();
+        this._pendingTasks.length = 0;
+        for (const task of thisBatch) {
+            if (batchSet.has(task)) {
+                continue;
+            }
+            batchSet.add(task);
+            switch (task.type) {
+                case DomMaintenanceTaskType.SUBTREE_RENDER:
+                    this._handleSubtreeRenderTask(task);
+                    break;
+                case DomMaintenanceTaskType.COMPONENT_RENDER:
+                    this._handleComponentRenderTask(task);
+                    break;
+                case DomMaintenanceTaskType.ATTR_SYNC:
+                    this._handleAttrSyncTask(task);
+                    break;
+                case DomMaintenanceTaskType.PROP_SYNC:
+                    this._handlePropSyncTask(task);
+                    break;
+                case DomMaintenanceTaskType.TPL_SYNC:
+                    this._handleTplSyncTask(task);
+                    break;
+                case DomMaintenanceTaskType.SUBTREE_TOGGLE:
+                    this._handleSubtreeToggleTask(task);
+                    break;
+                case DomMaintenanceTaskType.EVENT_BRIDGE:
+                    this._handleEventBridgeTask(task);
+                    break;
+            }
+        }
+    }
+
+    protected _setupReactivity() {
+        this[REACTIVE_KIT].on('assign', (tgt, prop, newVal, oldVal) => {
+            const evtgt = this._reactiveTargets.get(tgt);
+            if (evtgt) {
+                const ev = new CustomEvent(prop, { detail: { newVal, oldVal } });
+                evtgt.dispatchEvent(ev);
+            }
+        });
+        this[REACTIVE_KIT].on('delete', (tgt, prop, oldVal) => {
+            const evtgt = this._reactiveTargets.get(tgt);
+            if (evtgt) {
+                const ev = new CustomEvent(prop, { detail: { oldVal } });
+                evtgt.dispatchEvent(ev);
+            }
+        });
+        this[REACTIVE_KIT].on('define', (tgt, prop, desc, oldVal) => {
+            const evtgt = this._reactiveTargets.get(tgt);
+            if (evtgt) {
+                const ev = new CustomEvent(prop, { detail: { desc, oldVal } });
+                evtgt.dispatchEvent(ev);
+            }
+        });
+        this[REACTIVE_KIT].on('array-op', (tgt, method, ...args) => {
+            const evtgt = this._reactiveTargets.get(tgt);
+            if (evtgt) {
+                const ev = new CustomEvent(ARRAY_OP_TRIGGER, { detail: { method, args } });
+                evtgt.dispatchEvent(ev);
+            }
+        });
     }
 }

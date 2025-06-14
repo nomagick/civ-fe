@@ -112,6 +112,10 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
                     return cached;
                 }
 
+                if (Array.isArray(tgt) && (p in this.arrayOptimizationKit)) {
+                    return this.arrayOptimizationKit[p as keyof typeof this.arrayOptimizationKit];
+                }
+
                 if (!isObject(val) || isPrimitiveLike(val)) {
                     return val;
                 }
@@ -201,12 +205,10 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             const original: Function = Array.prototype[method];
             const rk = this;
             const mangled = function (this: Array<any>, ...args: Parameters<unknown[][T]>): ReturnType<unknown[][T]> {
-                const origLength = this.length;
-                const result = original.apply(this, args);
-                rk.emit('array-op', method, this, ...args);
-                if (this.length !== origLength) {
-                    rk.emit('assign', this, 'length', this.length, origLength);
-                }
+                const origVal = globalProxyRevMap.get(this) || this;
+                const result = original.apply(origVal, args);
+                rk.emit('array-op', this, method, ...args);
+
                 return result;
             }
 
