@@ -853,8 +853,7 @@ export class CivComponent extends EventEmitter {
                         break;
                 }
             } catch (err) {
-                // Log and continue with the rest
-                console.error(`${this.constructor.name} Error:`, task, err);
+                this.emit('error', err, task);
             }
         }
     }
@@ -891,6 +890,10 @@ export class CivComponent extends EventEmitter {
                 evtgt.dispatchEvent(ev);
                 this._digestTasks();
             }
+        });
+
+        this.on('error', (...args: any[]) => {
+            console.error(`${this.constructor.name} Error:`, ...args);
         });
     }
 }
