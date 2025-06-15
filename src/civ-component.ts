@@ -828,28 +828,33 @@ export class CivComponent extends EventEmitter {
                 continue;
             }
             batchSet.add(task);
-            switch (task.type) {
-                case DomMaintenanceTaskType.SUBTREE_RENDER:
-                    this._handleSubtreeRenderTask(task);
-                    break;
-                case DomMaintenanceTaskType.COMPONENT_RENDER:
-                    this._handleComponentRenderTask(task);
-                    break;
-                case DomMaintenanceTaskType.ATTR_SYNC:
-                    this._handleAttrSyncTask(task);
-                    break;
-                case DomMaintenanceTaskType.PROP_SYNC:
-                    this._handlePropSyncTask(task);
-                    break;
-                case DomMaintenanceTaskType.TPL_SYNC:
-                    this._handleTplSyncTask(task);
-                    break;
-                case DomMaintenanceTaskType.SUBTREE_TOGGLE:
-                    this._handleSubtreeToggleTask(task);
-                    break;
-                case DomMaintenanceTaskType.EVENT_BRIDGE:
-                    this._handleEventBridgeTask(task);
-                    break;
+            try {
+                switch (task.type) {
+                    case DomMaintenanceTaskType.SUBTREE_RENDER:
+                        this._handleSubtreeRenderTask(task);
+                        break;
+                    case DomMaintenanceTaskType.COMPONENT_RENDER:
+                        this._handleComponentRenderTask(task);
+                        break;
+                    case DomMaintenanceTaskType.ATTR_SYNC:
+                        this._handleAttrSyncTask(task);
+                        break;
+                    case DomMaintenanceTaskType.PROP_SYNC:
+                        this._handlePropSyncTask(task);
+                        break;
+                    case DomMaintenanceTaskType.TPL_SYNC:
+                        this._handleTplSyncTask(task);
+                        break;
+                    case DomMaintenanceTaskType.SUBTREE_TOGGLE:
+                        this._handleSubtreeToggleTask(task);
+                        break;
+                    case DomMaintenanceTaskType.EVENT_BRIDGE:
+                        this._handleEventBridgeTask(task);
+                        break;
+                }
+            } catch (err) {
+                // Log and continue with the rest
+                console.error(`${this.constructor.name} Error:`, task, err);
             }
         }
     }
