@@ -1,7 +1,7 @@
 import { extractForLoopTokens } from "./utils/lang";
 
 
-export const pseudoNamespacePrefix = 'c:'
+export const pseudoNamespacePrefix = 'civ:'
 export function parseMagicAttr(name: string) {
     if ((name.startsWith(':') && name[1] && name[1] !== ':')) {
         return name.slice(1)
