@@ -204,7 +204,7 @@ export function isPrimitiveLike(o: any, ...primitivePrototypeSets: Array<Set<obj
     if (constructablePrototype === Object.prototype || constructablePrototype === Array.prototype || constructablePrototype === null) {
         return false;
     }
-    
+
     if (!constructablePrototype) {
         return true;
     }
@@ -292,3 +292,24 @@ export function strongerAssign(target: object, source: object) {
     }
 }
 
+export const setImmediate = (function setImmediateFactory() {
+    const channel = new MessageChannel();
+    const callbacks: Function[] = [];
+    let index = 0;
+
+    channel.port2.onmessage = function processCallbacks() {
+        while (index < callbacks.length) {
+            callbacks[index++]();
+        }
+        callbacks.length = 0;
+        index = 0;
+    };
+
+    return function setImmediate(callback: Function) {
+        const wasEmpty = callbacks.length === 0;
+        callbacks.push(callback);
+        if (wasEmpty) {
+            channel.port1.postMessage(null);
+        }
+    };
+})();

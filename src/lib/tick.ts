@@ -1,6 +1,8 @@
+import { setImmediate } from "./lang";
+
 let j = 1;
 
-const tickFunction = setTimeout;
+const tickFunction = setImmediate || setTimeout;
 
 const wm = new WeakMap<any, WeakMap<any, boolean>>();
 
