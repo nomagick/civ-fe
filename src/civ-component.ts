@@ -51,6 +51,7 @@ export class CivComponent extends EventEmitter {
             // @ts-ignore
             setupAttrObserver.call(this);
         }
+        this._setupReactivity();
         Reflect.apply(activateReactivity, this, []);
     }
 
