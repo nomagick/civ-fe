@@ -11,7 +11,8 @@ import { parseTemplate } from "./utils/template-parser";
 import { AttrSyncTask, ComponentRenderTask, DomMaintenanceTask, DomMaintenanceTaskType, EventBridgeTask, PropSyncTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask } from "./dom";
 import { TrieNode } from "./lib/trie";
 import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
-import { EventEmitter } from "lib/event-emitter";
+import { EventEmitter } from "./lib/event-emitter";
+import { perNextTick } from "./lib/tick";
 
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin { }
 export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
@@ -816,10 +817,11 @@ export class CivComponent extends EventEmitter {
         this._untrackTask(task);
     }
 
+    @perNextTick
     protected _digestTasks() {
-        const thisBatch = [...this._pendingTasks];
+        const thisBatch = this._pendingTasks;
+        this._pendingTasks = [];
         const batchSet = new WeakSet();
-        this._pendingTasks.length = 0;
         for (const task of thisBatch) {
             if (batchSet.has(task)) {
                 continue;
@@ -857,6 +859,7 @@ export class CivComponent extends EventEmitter {
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { newVal, oldVal } });
                 evtgt.dispatchEvent(ev);
+                this._digestTasks();
             }
         });
         this[REACTIVE_KIT].on('delete', (tgt, prop, oldVal) => {
@@ -864,6 +867,7 @@ export class CivComponent extends EventEmitter {
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { oldVal } });
                 evtgt.dispatchEvent(ev);
+                this._digestTasks();
             }
         });
         this[REACTIVE_KIT].on('define', (tgt, prop, desc, oldVal) => {
@@ -871,6 +875,7 @@ export class CivComponent extends EventEmitter {
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { desc, oldVal } });
                 evtgt.dispatchEvent(ev);
+                this._digestTasks();
             }
         });
         this[REACTIVE_KIT].on('array-op', (tgt, method, ...args) => {
@@ -878,6 +883,7 @@ export class CivComponent extends EventEmitter {
             if (evtgt) {
                 const ev = new CustomEvent(ARRAY_OP_TRIGGER, { detail: { method, args } });
                 evtgt.dispatchEvent(ev);
+                this._digestTasks();
             }
         });
     }
