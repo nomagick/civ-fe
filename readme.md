@@ -12,23 +12,20 @@ Civ-FE is designed to address these issues, and provide a solid foundation for b
 
 ## Design Focus
 - Careful, responsible reference and data management without using external libraries
-- Decorators & Dependency Injection
+- Solid OOP, Class hierarchy, Decorators and Dependency Injection
 - Adherence to web standards
 
 - Separation of template and logic
 - Surgical DOM-data binding and updating
-- Solid OOP and Dependency Injection
 - Help with DOM, not hide from DOM
 
 ## FAQ
-### Why not popular frameworks?
+### Why another framework?
 React: mixing template and logic, readability nightmare, superficial "functional programming", Edo-Tensei of PHP
 Vue: erosion of engineering principles, mindless copycat, normalization of bad practices, marketing over substance
 Angular: over engineering, arbitrary use of rxjs, KPI centric, corporate bloat
-Svelte: everything is smart-ass magic
-Solid.js: nothing new
 
-Wide spread issue: repelling of DOM, undermining long term career development of frontend developers.
+Thing in common: repelling of DOM, undermining long term career development of frontend developers.
 
 ### What about Functional Programming?
 In frontend the term "functional programming" means totally different than in general software engineering. It is mostly a marketing term to justify their smart-ass APIs. It's just chained collection processing and value type to reference type wrapping. That is not functional programming.
