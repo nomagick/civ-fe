@@ -1,5 +1,4 @@
-// @ts-ignore
-const sass = await import('https://jspm.dev/sass');
+import sass from 'sass';
 
 export function scss(strings: TemplateStringsArray, ...values: any[]): string {
     let result = '';
@@ -10,5 +9,5 @@ export function scss(strings: TemplateStringsArray, ...values: any[]): string {
         }
     }
 
-    return sass.compileString(result, { style: 'compressed' })
+    return sass.compileString(result, { style: 'compressed' }).css;
 }
