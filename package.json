@@ -1,7 +1,8 @@
 {
     "name": "civ-fe",
     "version": "0.0.1",
-    "main": "build/main.js",
+    "main": "build/index.js",
+    "types": "build/index.d.ts",
     "scripts": {
         "build": "tsc -p .",
         "test": "echo \"Error: no test specified\" && exit 1"
@@ -9,7 +10,8 @@
     "author": "",
     "license": "AGPL-3.0",
     "description": "",
-    "dependencies": {
-        "sass": "^1.89.2"
+    "devDependencies": {
+        "sass": "^1.89.2",
+        "typescript": "^5.8.3"
     }
 }

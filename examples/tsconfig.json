@@ -1,0 +1,57 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": [
+            "ES2022",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "module": "ESNext",
+        "moduleResolution": "node",
+        "resolveJsonModule": true,
+        "allowImportingTsExtensions": false,
+        "isolatedModules": true,
+        "noEmit": false,
+        "allowJs": true,
+        "checkJs": false,
+        "outDir": "./",
+        "rootDir": "./",
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "exactOptionalPropertyTypes": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "removeComments": false,
+        "useDefineForClassFields": false,
+        "experimentalDecorators": true, /* Enables experimental support for ES7 decorators. */
+        "emitDecoratorMetadata": true, /* Enables experimental support for emitting type metadata for decorators. */
+        
+        "baseUrl": ".",
+        "paths": {
+            "civ-fe": [
+                "../"
+            ],
+        }
+    },
+    "include": [
+        "src/**/*",
+        "**/*.ts",
+        "**/*.tsx"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "build",
+        "**/*.test.ts",
+        "**/*.spec.ts"
+    ]
+}
