@@ -23,7 +23,6 @@ export function Attr(overrideName?: string) {
         Object.defineProperty(target, key, {
             configurable: true,
             enumerable: true,
-            writable: true,
             get(this: AttrMixin) {
                 return this.element.getAttribute(attrName);
             },

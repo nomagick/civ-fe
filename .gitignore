@@ -12,3 +12,5 @@ thumbs.db
 .env
 .test*
 .vscode/
+.parcel-cache/
+examples/dist/

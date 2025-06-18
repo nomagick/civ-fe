@@ -1,0 +1,15 @@
+{
+  "name": "civ-fe-examples",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "parcel ./*/*.html --open",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "events": "^3.3.0",
+    "parcel": "^2.15.2"
+  }
+}

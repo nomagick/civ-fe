@@ -38,7 +38,6 @@ export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>) {
         Object.defineProperty(target, key, {
             configurable: true,
             enumerable: true,
-            writable: true,
             get() {
                 return Reflect.get(this[REACTIVE_KIT], key);
             },

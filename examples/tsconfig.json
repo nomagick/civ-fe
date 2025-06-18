@@ -17,6 +17,7 @@
         "outDir": "./",
         "rootDir": "./",
         "strict": true,
+        "importHelpers": false,
         "noUnusedLocals": true,
         "noUnusedParameters": true,
         "noImplicitReturns": true,
