@@ -24,14 +24,15 @@ export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>) {
         const thisConfig = config || {};
 
         thisConfig.initializers ??= [];
-        thisConfig.initializers.unshift(
-            function () {
-                this[REACTIVE_KIT] ??= new ReactiveKit(this);
-                if (this.hasOwnProperty(key)) {
-                    Reflect.set(this[REACTIVE_KIT], key, Reflect.get(this, key));
-                }
-            }
-        );
+        // TODO: this is only needed for TC39 decorators + class property
+        // thisConfig.initializers.unshift(
+        //     function () {
+        //         this[REACTIVE_KIT] ??= new ReactiveKit({} as any);
+        //         if (this.hasOwnProperty(key)) {
+        //             Reflect.set(this[REACTIVE_KIT].proxy, key, Reflect.get(this, key));
+        //         }
+        //     }
+        // );
 
         Reflect.set(target[REACTIVE_CFG], key, thisConfig);
 
@@ -39,10 +40,10 @@ export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>) {
             configurable: true,
             enumerable: true,
             get() {
-                return Reflect.get(this[REACTIVE_KIT], key);
+                return Reflect.get(this[REACTIVE_KIT].proxy, key);
             },
             set(value) {
-                return Reflect.set(this[REACTIVE_KIT], key, value);
+                return Reflect.set(this[REACTIVE_KIT].proxy, key, value);
             }
         });
     };
@@ -50,7 +51,7 @@ export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>) {
 
 export function initReactivity(this: ReactivityHost) {
     if (!this.hasOwnProperty(REACTIVE_KIT)) {
-        this[REACTIVE_KIT] = new ReactiveKit(this);
+        this[REACTIVE_KIT] = new ReactiveKit({} as any);
     }
 
     if (!this.hasOwnProperty(REACTIVE_CFG)) {

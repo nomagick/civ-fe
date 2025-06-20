@@ -1,5 +1,5 @@
 import { runOncePerClass } from "./lib/once";
-import { REACTIVE_TEMPLATE_DOM, ReactiveTemplateMixin, identify } from "./lib/dom-template";
+import { REACTIVE_TEMPLATE_DOM, REACTIVE_TEMPLATE_SHEET, ReactiveTemplateMixin, identify } from "./lib/dom-template";
 import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./lib/reactive";
 import {
     attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
@@ -53,6 +53,7 @@ export class CivComponent extends EventEmitter {
         }
         this._setupReactivity();
         Reflect.apply(activateReactivity, this, []);
+        this._digestTasks();
     }
 
     foreign(eventTarget: ReactivityHost) {
@@ -91,6 +92,7 @@ export class CivComponent extends EventEmitter {
         const attributes = el.attributes;
         for (let i = attributes.length - 1; i >= 0; i--) {
             const attr = attributes[i];
+            el.removeAttributeNode(attr);
             targetElement.setAttributeNode(attr);
         }
 
@@ -270,6 +272,10 @@ export class CivComponent extends EventEmitter {
             k.setAttribute(significantFlagClass, sn);
             elemTraitsLookup.set(sn, v);
         }
+        const sheet = this[REACTIVE_TEMPLATE_SHEET];
+        if (sheet) {
+            document.adoptedStyleSheets.push(sheet);
+        }
     }
 
     protected _activateTemplate() {
@@ -281,7 +287,7 @@ export class CivComponent extends EventEmitter {
             return this.element;
         }
 
-        const rootElement = document.importNode(tplDom.documentElement, true);
+        const rootElement = document.importNode(tplDom.body.firstElementChild || tplDom.head, true);
         rootElement.classList.add(identify(this.constructor as typeof CivComponent));
 
         if (isMagicForTemplateElement(rootElement)) {
@@ -289,6 +295,8 @@ export class CivComponent extends EventEmitter {
         }
 
         this.element = rootElement;
+
+        this._renderTemplateElem();
 
         return this.element;
     }
@@ -366,7 +374,7 @@ export class CivComponent extends EventEmitter {
             }, elem);
         });
 
-        elem.querySelectorAll(`.${significantFlagClass}`).forEach((el) => {
+        const handler = (el: Element) => {
             const elSerial = el.getAttribute(significantFlagClass) || '';
             const traits = elemTraitsLookup.get(elSerial);
             if (!traits) {
@@ -527,8 +535,10 @@ export class CivComponent extends EventEmitter {
             // TODO: check if it makes sense to keep these
             el.classList.remove(significantFlagClass);
             el.removeAttribute(significantFlagClass);
-        });
+        };
 
+        handler.call(this, elem);
+        elem.querySelectorAll(`.${significantFlagClass}`).forEach(handler);
     }
 
     protected _evaluateExpr(expr: string, ns: Record<string, unknown> = Object.create(null), noListen?: unknown) {

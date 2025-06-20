@@ -39,7 +39,10 @@ export function HTML(text: string) {
 
         const doc = new DOMParser().parseFromString(text, 'text/html');
 
-        Reflect.set(target, REACTIVE_TEMPLATE_DOM, doc);
+        if (!doc.body.firstElementChild && !doc.head.firstElementChild) {
+            throw new Error("Invalid HTML template");
+        }
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
     };
 }
 
@@ -71,7 +74,7 @@ export function CSS(text: string) {
         sheet.replaceSync(text);
         mangleSelectorText(sheet.cssRules, identifier);
 
-        Reflect.set(target, REACTIVE_TEMPLATE_SHEET, sheet);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_SHEET, sheet);
     };
 }
 
