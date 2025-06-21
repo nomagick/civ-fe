@@ -30,7 +30,7 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
     protected managedProxyMap = new WeakMap<any, any>();
 
     protected arrayOptimizationKit = this.getArrayOptimizationKit();
-    protected foreignRevokers = new Map<ReactiveKit<any>, AbortController>();
+    protected foreignRevokers = new WeakMap<ReactiveKit<any>, AbortController>();
 
     constructor(target: T, handlers: ProxyHandler<T> = {}) {
         super();
@@ -73,6 +73,9 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
                 const r = Reflect.set(tgt, p, value, receiver);
                 if (typeof p === 'string' && r) {
                     this.emit('assign', tgt, p, value, oldVal);
+                    if (value !== oldVal) {
+                        this.emit('change', tgt, p, value, oldVal);
+                    }
                 }
 
                 return r;
@@ -139,6 +142,9 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
                 const r = origHandler.call(handlers, tgt, p, value, receiver);
                 if (typeof p === 'string' && r) {
                     this.emit('assign', tgt, p, value, oldVal);
+                    if (value !== oldVal) {
+                        this.emit('change', tgt, p, value, oldVal);
+                    }
                 }
 
                 return r;
@@ -207,7 +213,7 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             const mangled = function (this: Array<any>, ...args: Parameters<unknown[][T]>): ReturnType<unknown[][T]> {
                 const origVal = globalProxyRevMap.get(this) || this;
                 const result = original.apply(origVal, args);
-                rk.emit('array-op', this, method, ...args);
+                rk.emit('array-op', origVal, method, ...args);
 
                 return result;
             }
@@ -242,7 +248,7 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
         }
         const abortCtl = new AbortController();
         this.foreignRevokers.set(foreign, abortCtl);
-        for (const event of ['access', 'assign', 'delete', 'define', 'array-op']) {
+        for (const event of ['access', 'assign', 'change', 'delete', 'define', 'array-op']) {
             foreign.addEventListener(event, (e) => {
                 this.emit(event, ...(e as CustomEvent).detail);
             }, { signal: abortCtl.signal });
@@ -258,11 +264,4 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             abortCtl.abort();
         }
     }
-
-    disconnectAll() {
-        for (const foreign of this.foreignRevokers.keys()) {
-            this.disconnect(foreign);
-        }
-    }
-
 }

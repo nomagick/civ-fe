@@ -17,7 +17,7 @@ import { perNextTick } from "./lib/tick";
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin { }
 export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
 
-const forExpRegex = /^(?<exp1>.+?)\s+(?<typ>in|of)\s+(?<exp2>.+)$/;
+const forExpRegex = /^(?<expr1>.+?)\s+(?<typ>in|of)\s+(?<expr2>.+)$/;
 let serial = 1;
 
 type ExprFn = (this: CivComponent, _ns: Record<string, unknown>) => unknown;
@@ -150,6 +150,10 @@ export class CivComponent extends EventEmitter {
         }
     }
 
+    cleanup() {
+        return this._cleanup();
+    }
+
     protected get _expressionMap() {
         return (this.constructor as typeof CivComponent).expressionMap;
     }
@@ -232,6 +236,7 @@ export class CivComponent extends EventEmitter {
                 if (!trait) {
                     continue;
                 }
+                elemTraits.push(trait);
                 magicAttrs.push(attr);
                 if (trait.length === 1 || !trait.includes(expr)) {
                     continue;
@@ -246,8 +251,8 @@ export class CivComponent extends EventEmitter {
                     }
                     elem.classList.add(subtreeTemplateFlagClass);
                     const { expr1, typ, expr2 } = matched.groups!;
-                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { const __iterable_ = ${expr2}; yield __iterable_; for (${expr1} ${typ} __iterable_}) { yield ${namespaceInjectionArgName}; } } }`) as unknown as GenExprFn;
-                    Object.defineProperty(genFn, name, {
+                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { const __iterable_ = ${expr2}; yield __iterable_; for (${expr1} ${typ} __iterable_) { yield ${namespaceInjectionArgName}; } } }`) as unknown as GenExprFn;
+                    Object.defineProperty(genFn, 'name', {
                         value: `*${genFn.name}`,
                         configurable: true
                     });
@@ -335,6 +340,9 @@ export class CivComponent extends EventEmitter {
             el.classList.remove(subtreeTemplateFlagClass);
 
             const elSerial = el.getAttribute(significantFlagClass) || '';
+            if (!elSerial) {
+                throw new Error(`Invalid template, unknown elSerial for element in component ${identify(this.constructor as typeof CivComponent)}`);
+            }
             const [, expr, nsJoint] = this._elemTraitsLookup.get(elSerial)?.find(([t]) => t === 'for') || [];
             if (!expr) {
                 throw new Error(`Cannot find *for expression for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
@@ -342,9 +350,6 @@ export class CivComponent extends EventEmitter {
             const injectNs = nsJoint?.split(',').filter(Boolean);
             if (!injectNs?.length) {
                 throw new Error(`Invalid *for expression: ${expr} for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
-            }
-            if (!el.parentNode) {
-                throw new Error()
             }
 
             this._trackTask({
@@ -376,9 +381,12 @@ export class CivComponent extends EventEmitter {
 
         const handler = (el: Element) => {
             const elSerial = el.getAttribute(significantFlagClass) || '';
+            if (!elSerial) {
+                return;
+            }
             const traits = elemTraitsLookup.get(elSerial);
             if (!traits) {
-                throw new Error(`Cannot find traits for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
+                throw new Error(`Cannot find traits for element ${el.tagName} with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
             }
             const hasPlainTrait = traits.some(([trait]) => trait === 'plain');
             for (const [trait, ...args] of traits) {
@@ -584,10 +592,10 @@ export class CivComponent extends EventEmitter {
         };
         this[REACTIVE_KIT].on('access', hdl);
         const it = fn.call(this, ns) as Generator;
-        it.next();
+        const initialYield = it.next();
         this[REACTIVE_KIT].off('access', hdl);
 
-        yield { value: ns, vecs };
+        yield { value: initialYield.value, vecs, ns };
 
         const dVecs: [object, string][] = [];
         const dhdl = (tgt: object, prop: string) => {
@@ -795,6 +803,14 @@ export class CivComponent extends EventEmitter {
             if (value) {
                 currentAnchor.parentNode?.replaceChild(el, currentAnchor);
                 this._taskToNodeMap.set(task, el);
+                if (currentAnchor instanceof Element && elementToComponentMap.has(currentAnchor)) {
+                    const comp = elementToComponentMap.get(currentAnchor)!;
+                    comp.disconnectedCallback();
+                }
+                if (elementToComponentMap.has(el)) {
+                    const comp = elementToComponentMap.get(el)!;
+                    comp.connectedCallback();
+                }
                 active = true;
                 break;
             }
@@ -802,6 +818,10 @@ export class CivComponent extends EventEmitter {
 
         if (!active) {
             currentAnchor.parentNode?.replaceChild(task.anchor, currentAnchor);
+            if (currentAnchor instanceof Element && elementToComponentMap.has(currentAnchor)) {
+                const comp = elementToComponentMap.get(currentAnchor)!;
+                comp.disconnectedCallback();
+            }
             this._taskToNodeMap.set(task, task.anchor);
         }
         this._setupTaskRecurrence(task, allVecs);
@@ -869,7 +889,7 @@ export class CivComponent extends EventEmitter {
     }
 
     protected _setupReactivity() {
-        this[REACTIVE_KIT].on('assign', (tgt, prop, newVal, oldVal) => {
+        this[REACTIVE_KIT].on('change', (tgt, prop, newVal, oldVal) => {
             const evtgt = this._reactiveTargets.get(tgt);
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { newVal, oldVal } });

@@ -62,13 +62,10 @@ export class EventEmitter extends EventTarget {
     }
 
     emit(event: string, ...args: any[]): boolean {
-        if (!this[EVENT_EMITTER_REVOKERS].has(event)) {
-            return false; // No listeners for this event
-        }
         const customEvent = new CustomEvent(event, {
             detail: args,
             cancelable: false,
-            bubbles: true
+            bubbles: false
         });
         return this.dispatchEvent(customEvent);
     }
@@ -185,12 +182,9 @@ export function mixinEventEmitter<T extends typeof EventTarget>(Base: T): T & { 
         }
 
         emit(event: string, ...args: any[]): boolean {
-            if (!this.__revokers.has(event)) {
-                return false; // No listeners for this event
-            }
             const customEvent = new CustomEvent(event, {
                 detail: args,
-                cancelable: true,
+                cancelable: false,
                 bubbles: false
             });
             return this.dispatchEvent(customEvent);

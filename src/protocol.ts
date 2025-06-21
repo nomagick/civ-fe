@@ -20,6 +20,9 @@ export function parseMagicProp(name: string) {
     if (name.startsWith('::') && name[2] && name[2] !== ':') {
         return name.slice(2);
     }
+    if (name.startsWith('.') && name[1] && name[1] !== '.') {
+        return name.slice(1);
+    }
 
     return undefined;
 }
@@ -78,8 +81,9 @@ export const eventArgName = '$event';
 export const namespaceInjectionArgName = '_ns';
 
 export type Trait = 'tpl' | 'component' | 'attr' | 'prop' | 'event' | 'documentEvent' | 'for' | 'if' | 'elif' | 'else' | 'html' | 'bind' | 'plain';
+export type Traits = [Trait, ...string[]][];
 
-export function attrToTrait(attrName: string, expr: string): string[] | undefined {
+export function attrToTrait(attrName: string, expr: string): Traits[number] | undefined {
     const parsedAttr = parseMagicAttr(attrName);
     if (parsedAttr) {
         return ['attr', parsedAttr, expr] as const;
@@ -121,4 +125,3 @@ export function attrToTrait(attrName: string, expr: string): string[] | undefine
     return undefined;
 }
 
-export type Traits = [Trait, ...string[]][];

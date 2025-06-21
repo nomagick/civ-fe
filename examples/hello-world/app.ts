@@ -6,9 +6,19 @@ export class HelloWorld extends CivComponent {
     @Reactive()
     message: string = 'World';
 
-    constructor() {
-        super();
-        setInterval(()=> this.message = this.message.endsWith('!') ? this.message.slice(0, -1) : this.message + '!', 1000);
+    interval?: ReturnType<typeof setInterval>;
+
+    override connectedCallback(): void {
+        super.connectedCallback();
+        this.interval = setInterval(() => this.message = this.message.endsWith('!') ? this.message.slice(0, -1) : this.message + '!', 1000);
+    }
+
+    override disconnectedCallback(): void {
+        super.disconnectedCallback();
+        if (this.interval) {
+            clearInterval(this.interval);
+            delete this.interval;
+        }
     }
 }
 
