@@ -41,3 +41,30 @@ export function perNextTick(_target: any, _propName: string | symbol, propDesc: 
     return propDesc;
 }
 
+export function wrapPerNextTick<T extends Function>(func: T): T {
+    const perNextTickSymbol = Symbol(`PER_NEXT_TICK:${j++}`);
+
+    function newFunc(this: unknown, ...argv: any[]) {
+        let wm2 = wm.get(this);
+        if (!wm2) {
+            wm2 = new WeakMap<any, any>();
+            wm.set(this, wm2);
+        }
+        const v = wm2.get(perNextTickSymbol);
+        if (v) {
+            return;
+        }
+        wm2.set(perNextTickSymbol, true);
+
+        tickFunction(() => {
+            wm2.set(perNextTickSymbol, false);
+            func.apply(this, argv);
+        });
+    }
+
+    Object.defineProperty(newFunc, 'name',
+        { value: `perNextTickWrapped${(func.name[0] || '').toUpperCase()}${func.name.slice(1)}`, writable: false, enumerable: false, configurable: true }
+    );
+
+    return newFunc as any;
+}

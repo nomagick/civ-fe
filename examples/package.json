@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "parcel ./*/*.html --no-cache",
+    "start": "parcel ./**/*.html --no-cache",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
