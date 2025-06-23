@@ -41,6 +41,8 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
                 const val: any = Reflect.get(tgt, p, receiver);
                 if (typeof p === 'string') {
                     this.emit('access', tgt, p, val);
+                } else if (p === Symbol.iterator) {
+                    this.emit('access', tgt, p, val);
                 }
 
                 const cached = this.managedProxyMap.get(val);
@@ -108,7 +110,11 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             this.handlers.get = (tgt, p, receiver) => {
                 const val = origHandler.call(handlers, tgt, p, receiver);
 
-                this.emit('access', tgt, p, val);
+                if (typeof p === 'string') {
+                    this.emit('access', tgt, p, val);
+                } else if (p === Symbol.iterator) {
+                    this.emit('access', tgt, p, val);
+                }
 
                 const cached = this.managedProxyMap.get(val);
                 if (cached) {

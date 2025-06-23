@@ -20,7 +20,7 @@ const todoList = getReactiveStorage<TodoItem[]>('todoList', []);
     />
     <button>+</button>
     </form>
-    <div civ:for="todo of todoList.entries()">
+    <div civ:for="todo of todoList">
         <input
         type="checkbox"
         .checked="todo.done"

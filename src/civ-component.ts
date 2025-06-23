@@ -13,6 +13,7 @@ import { TrieNode } from "./lib/trie";
 import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EventEmitter } from "./lib/event-emitter";
 import { perNextTick } from "./lib/tick";
+import { unwrap } from "./lib/reactive-kit";
 
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin { }
 export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
@@ -23,7 +24,7 @@ let serial = 1;
 type ExprFn = (this: CivComponent, _ns: Record<string, unknown>) => unknown;
 type GenExprFn = (this: CivComponent, _ns: Record<string, unknown>) => Generator;
 
-const ARRAY_OP_TRIGGER = '__civ_array_op_trigger__';
+const ANY_WRITE_OP_TRIGGER = '__civ_any_write_op_trigger__';
 
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
@@ -152,6 +153,13 @@ export class CivComponent extends EventEmitter {
 
     cleanup() {
         return this._cleanup();
+    }
+
+    [Symbol.dispose]() {
+        this.cleanup();
+    }
+    [Symbol.asyncDispose]() {
+        this[Symbol.dispose]();
     }
 
     protected get _expressionMap() {
@@ -654,24 +662,21 @@ export class CivComponent extends EventEmitter {
         if (initialYield.vecs.length) {
             const vecs = [...initialYield.vecs];
             isReactive = true;
-            let arrayVal;
-            if (Array.isArray(initialYield.value)) {
-                arrayVal = initialYield.value;
-            } else if (initialYield.value instanceof Iterator) {
-                const lastVec = vecs.pop()!;
+            if (initialYield.value instanceof Iterator) {
+                const lastVec = vecs[vecs.length - 1];
                 const bv = lastVec[0];
-                if (Array.isArray(bv)) {
-                    arrayVal = bv;
-                } else {
-                    vecs.push(lastVec);
-                }
-            }
-            if (arrayVal) {
-                vecs.push([arrayVal, ARRAY_OP_TRIGGER]);
-                equivalentIterable = arrayVal;
+                vecs.push([bv, ANY_WRITE_OP_TRIGGER]);
+                equivalentIterable = bv;
             }
 
             this._setupTaskRecurrence(task, vecs);
+        } else if (Symbol.iterator in initialYield.value) {
+            const unwrapped = unwrap(initialYield.value);
+            if (unwrapped !== initialYield.value) {
+                isReactive = true;
+                equivalentIterable = unwrapped;
+                this._setupTaskRecurrence(task, [[unwrapped, ANY_WRITE_OP_TRIGGER]]);
+            }
         }
 
         const previousTrie = this._subtreeRenderTaskTrack.get(task);
@@ -697,46 +702,56 @@ export class CivComponent extends EventEmitter {
             const subTreeElem = task.tpl.cloneNode(true) as Element;
             this._renderTemplateElem(subTreeElem, cloneNs);
             newElements.push(subTreeElem);
-            parent.insertBefore(subTreeElem, end);
             nextTrie.insert(...series).payload = subTreeElem;
             newSequence.push(subTreeElem);
+        }
+
+        if (newElements.length) {
+            this._digestTasks();
         }
 
         let anchorNode: Node | null = start.nextSibling;
 
         for (const x of newSequence) {
-            if (x.parentElement !== parent) {
+            if (x.parentElement && x.parentElement !== parent) {
                 // Element exists but moved to another place
                 continue;
             }
+            if (anchorNode === x) {
+                anchorNode = x.nextSibling;
+                continue;
+            }
             parent.insertBefore(x, anchorNode);
-            anchorNode = x;
         }
 
-        let itNode;
-        while (itNode = anchorNode?.nextSibling) {
-            if (itNode === end) {
-                break;
-            }
-            itNode.remove();
-            const taskSet = this._subtreeTaskTrack.get(itNode as Element);
-            if (taskSet) {
-                for (const t of taskSet) {
-                    const revoker = this._taskToRevokerMap.get(t);
-                    revoker?.abort();
-                    this._taskToRevokerMap.delete(t);
-                }
-            }
-            this._subtreeTaskTrack.delete(itNode as Element);
-
-            if (itNode instanceof Element) {
-                itNode.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
-                    const comp = elementToComponentMap.get(el);
-                    if (comp) {
-                        comp.disconnectedCallback();
-                        comp._cleanup();
+        if (anchorNode !== end) {
+            let itNode: Node | undefined | null;
+            while (itNode = end.previousSibling) {
+                if (itNode instanceof Element) {
+                    itNode.remove();
+                    const taskSet = this._subtreeTaskTrack.get(itNode as Element);
+                    if (taskSet) {
+                        for (const t of taskSet) {
+                            const revoker = this._taskToRevokerMap.get(t);
+                            revoker?.abort();
+                            this._taskToRevokerMap.delete(t);
+                        }
                     }
-                });
+                    this._subtreeTaskTrack.delete(itNode as Element);
+
+                    itNode.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
+                        const comp = elementToComponentMap.get(el);
+                        if (comp) {
+                            comp.disconnectedCallback();
+                            (comp[Symbol.dispose] || comp[Symbol.asyncDispose])?.();
+                        }
+                    });
+                } else {
+                    itNode.parentElement?.removeChild(itNode);
+                }
+                if (itNode === anchorNode) {
+                    break;
+                }
             }
         }
 
@@ -894,6 +909,8 @@ export class CivComponent extends EventEmitter {
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { newVal, oldVal } });
                 evtgt.dispatchEvent(ev);
+                const ev2 = new CustomEvent(ANY_WRITE_OP_TRIGGER, { detail: { newVal, oldVal } });
+                evtgt.dispatchEvent(ev2);
                 this._digestTasks();
             }
         });
@@ -902,6 +919,8 @@ export class CivComponent extends EventEmitter {
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { oldVal } });
                 evtgt.dispatchEvent(ev);
+                const ev2 = new CustomEvent(ANY_WRITE_OP_TRIGGER, { detail: { oldVal } });
+                evtgt.dispatchEvent(ev2);
                 this._digestTasks();
             }
         });
@@ -910,13 +929,15 @@ export class CivComponent extends EventEmitter {
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { desc, oldVal } });
                 evtgt.dispatchEvent(ev);
+                const ev2 = new CustomEvent(ANY_WRITE_OP_TRIGGER, { detail: { desc, oldVal } });
+                evtgt.dispatchEvent(ev2);
                 this._digestTasks();
             }
         });
         this[REACTIVE_KIT].on('array-op', (tgt, method, ...args) => {
             const evtgt = this._reactiveTargets.get(tgt);
             if (evtgt) {
-                const ev = new CustomEvent(ARRAY_OP_TRIGGER, { detail: { method, args } });
+                const ev = new CustomEvent(ANY_WRITE_OP_TRIGGER, { detail: { method, args } });
                 evtgt.dispatchEvent(ev);
                 this._digestTasks();
             }
