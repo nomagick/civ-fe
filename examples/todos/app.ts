@@ -29,7 +29,7 @@ const todoList = getReactiveStorage<TodoItem[]>('todoList', []);
         <input
         type="text"
         .value="todo.title"
-        @changed="todo.title = $event.target.value"
+        @change="todo.title = $event.target.value"
         />
         <button @click="dropTodo(todo)">
         x

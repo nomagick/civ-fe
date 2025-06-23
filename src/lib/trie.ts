@@ -2,10 +2,10 @@ export class TrieNode<T = unknown, D = unknown> {
     key: T;
     parent: TrieNode<T, D> | null = null;
 
-    children = new Map<T, TrieNode<T, D>>();
+    children?: Map<T, TrieNode<T, D>>;
 
     get isLeaf() {
-        return this.children.size === 0;
+        return this.children?.size === 0;
     }
 
     constructor(key: T, public payload?: D) {
@@ -29,11 +29,11 @@ export class TrieNode<T = unknown, D = unknown> {
         if (series.length === 0) {
             return this;
         }
-
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         let node: TrieNode = this;
 
         for (const key of series) {
+            node.children ??= new Map<T, TrieNode<T, D>>();
             if (!node.children.has(key)) {
                 node.children.set(key, new TrieNode(key));
                 node.children.get(key)!.parent = node;
@@ -54,7 +54,7 @@ export class TrieNode<T = unknown, D = unknown> {
         let node: TrieNode<T> | null = this;
 
         for (const key of series) {
-            if (!node.children.has(key)) {
+            if (!node.children?.has(key)) {
                 return false;
             }
 
@@ -77,7 +77,7 @@ export class TrieNode<T = unknown, D = unknown> {
         let node: TrieNode<T, D> | null = this;
         const [head, ...tail] = series;
 
-        if (!node.children.has(head)) {
+        if (!node.children?.has(head)) {
             return {
                 found: false,
                 ptr: node,
@@ -107,6 +107,10 @@ export class TrieNode<T = unknown, D = unknown> {
                 const node = stack.shift()!;
                 yield node;
 
+                if (!node.children) {
+                    continue;
+                }
+
                 for (const child of node.children.values()) {
                     stack.push(child);
                 }
@@ -118,6 +122,10 @@ export class TrieNode<T = unknown, D = unknown> {
         while (stack.length > 0) {
             const node = stack.pop()!;
             yield node;
+
+            if (!node.children) {
+                continue;
+            }
 
             for (const child of node.children.values()) {
                 stack.push(child);

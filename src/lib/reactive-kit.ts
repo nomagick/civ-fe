@@ -211,7 +211,7 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
     }
 
     getArrayOptimizationKit() {
-        const methodsToPatch = ['pop', 'push', 'shift', 'unshift', 'splice', 'reverse'] as const;
+        const methodsToPatch = ['pop', 'push', 'shift', 'unshift', 'splice', 'reverse', 'sort'] as const;
 
         const mangle = <T extends typeof methodsToPatch[number]>(method: T) => {
             const original: Function = Array.prototype[method];

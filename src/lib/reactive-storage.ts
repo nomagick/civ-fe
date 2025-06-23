@@ -14,11 +14,14 @@ export function getReactiveStorage<T extends object = Record<string, any>>(
     const kit = new ReactiveKit(base);
     Reflect.set(base, REACTIVE_KIT, kit);
 
-    kit.on('assign', wrapPerNextTick(
+    const handler = wrapPerNextTick(
         () => {
             storage.setItem(storageKey, JSON.stringify(kit.target));
         }
-    ));
+    );
+
+    kit.on('change', handler);
+    kit.on('array-op', handler);
 
     return kit.proxy;
 }
