@@ -63,9 +63,7 @@ export class EventEmitter extends EventTarget {
 
     emit(event: string, ...args: any[]): boolean {
         const customEvent = new CustomEvent(event, {
-            detail: args,
-            cancelable: false,
-            bubbles: false
+            detail: args
         });
         return this.dispatchEvent(customEvent);
     }
@@ -183,9 +181,7 @@ export function mixinEventEmitter<T extends typeof EventTarget>(Base: T): T & { 
 
         emit(event: string, ...args: any[]): boolean {
             const customEvent = new CustomEvent(event, {
-                detail: args,
-                cancelable: false,
-                bubbles: false
+                detail: args
             });
             return this.dispatchEvent(customEvent);
         }

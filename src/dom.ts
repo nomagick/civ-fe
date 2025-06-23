@@ -9,6 +9,7 @@ export enum DomMaintenanceTaskType {
     SUBTREE_TOGGLE = 'subtreeToggle',
     SUBTREE_RENDER = 'subtreeRender',
     COMPONENT_RENDER = 'componentRender',
+    ELEMENT_REF = 'elementRef',
 }
 
 export interface AttrSyncTask {
@@ -65,6 +66,13 @@ export interface ComponentRenderTask {
     ns?: Record<string, unknown>;
 }
 
+export interface ElementReferenceTask {
+    type: DomMaintenanceTaskType.ELEMENT_REF;
+    tgt: Element;
+    expr: string;
+    ns?: Record<string, unknown>;
+}
+
 export type DomMaintenanceTask =
     | SubtreeRenderTask
     | ComponentRenderTask
@@ -72,4 +80,23 @@ export type DomMaintenanceTask =
     | PropSyncTask
     | TplSyncTask
     | SubtreeToggleTask
-    | EventBridgeTask;
+    | EventBridgeTask
+    | ElementReferenceTask;
+
+
+export enum DomConstructionTaskType {
+    ATTACH = 'attach',
+    DETACH = 'detach',
+}
+
+export interface NodeAttachTask {
+    type: DomConstructionTaskType.ATTACH;
+    sub: Node;
+    anchor: Node;
+}
+export interface NodeDetachTask {
+    type: DomConstructionTaskType.DETACH;
+    sub: Node;
+}
+
+export type DomConstructionTask = NodeAttachTask | NodeDetachTask;

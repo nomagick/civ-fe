@@ -2,13 +2,14 @@ import { runOncePerClass } from "./lib/once";
 import { REACTIVE_TEMPLATE_DOM, REACTIVE_TEMPLATE_SHEET, ReactiveTemplateMixin, identify } from "./lib/dom-template";
 import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./lib/reactive";
 import {
-    attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
+    attachEventName,
+    attrToTrait, componentFlagClass, detachEventName, isMagicForAttr, isMagicForTemplateElement,
     namespaceInjectionArgName, significantFlagClass, subtreeTemplateFlagClass,
     Traits
 } from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
 import { parseTemplate } from "./utils/template-parser";
-import { AttrSyncTask, ComponentRenderTask, DomMaintenanceTask, DomMaintenanceTaskType, EventBridgeTask, PropSyncTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask } from "./dom";
+import { AttrSyncTask, ComponentRenderTask, DomConstructionTask, DomConstructionTaskType, DomMaintenanceTask, DomMaintenanceTaskType, ElementReferenceTask, EventBridgeTask, PropSyncTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask } from "./dom";
 import { TrieNode } from "./lib/trie";
 import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EventEmitter } from "./lib/event-emitter";
@@ -33,11 +34,11 @@ export class CivComponent extends EventEmitter {
     readonly serial = serial++;
     element!: Element;
     protected _pendingTasks: DomMaintenanceTask[] = [];
+    protected _pendingConstructions: DomConstructionTask[] = [];
     protected _revokers: Set<AbortController> = new Set();
     protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
     protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<object, Element>> = new WeakMap();
     protected _placeHolderElementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
-    protected _taskToNodeMap: WeakMap<DomMaintenanceTask, Node> = new WeakMap();
     protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
     protected _taskToRevokerMap: WeakMap<DomMaintenanceTask, AbortController> = new WeakMap();
     protected _subtreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
@@ -721,14 +722,17 @@ export class CivComponent extends EventEmitter {
                 anchorNode = x.nextSibling;
                 continue;
             }
-            parent.insertBefore(x, anchorNode);
+            this._pendingConstructions.push({
+                type: DomConstructionTaskType.ATTACH,
+                sub: x,
+                anchor: anchorNode || end
+            });
         }
 
         if (anchorNode !== end) {
             let itNode: Node | undefined | null;
             while (itNode = end.previousSibling) {
                 if (itNode instanceof Element) {
-                    itNode.remove();
                     const taskSet = this._subtreeTaskTrack.get(itNode as Element);
                     if (taskSet) {
                         for (const t of taskSet) {
@@ -738,6 +742,10 @@ export class CivComponent extends EventEmitter {
                         }
                     }
                     this._subtreeTaskTrack.delete(itNode as Element);
+                    this._pendingConstructions.push({
+                        type: DomConstructionTaskType.DETACH,
+                        sub: itNode,
+                    });
 
                     itNode.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
                         const comp = elementToComponentMap.get(el);
@@ -747,7 +755,10 @@ export class CivComponent extends EventEmitter {
                         }
                     });
                 } else {
-                    itNode.parentElement?.removeChild(itNode);
+                    this._pendingConstructions.push({
+                        type: DomConstructionTaskType.DETACH,
+                        sub: itNode,
+                    });
                 }
                 if (itNode === anchorNode) {
                     break;
@@ -810,35 +821,29 @@ export class CivComponent extends EventEmitter {
 
     protected _handleSubtreeToggleTask(task: SubtreeToggleTask) {
         const allVecs = [];
-        let active = false;
-        const currentAnchor = this._taskToNodeMap.get(task) || task.anchor;
+        let chosen = false;
         for (const [expr, el] of task.exprGroup) {
+            if (chosen) {
+                if (el.isConnected) {
+                    this._pendingConstructions.push({
+                        type: DomConstructionTaskType.DETACH,
+                        sub: el
+                    });
+                }
+                continue;
+            }
             const { vecs: vecs, value } = this._evaluateExpr(expr, task.ns);
             allVecs.push(...vecs);
             if (value) {
-                currentAnchor.parentNode?.replaceChild(el, currentAnchor);
-                this._taskToNodeMap.set(task, el);
-                if (currentAnchor instanceof Element && elementToComponentMap.has(currentAnchor)) {
-                    const comp = elementToComponentMap.get(currentAnchor)!;
-                    comp.disconnectedCallback();
-                }
-                if (elementToComponentMap.has(el)) {
-                    const comp = elementToComponentMap.get(el)!;
-                    comp.connectedCallback();
-                }
-                active = true;
-                break;
+                chosen = true;
+                this._pendingConstructions.push({
+                    type: DomConstructionTaskType.ATTACH,
+                    sub: el,
+                    anchor: task.anchor
+                });
             }
         }
 
-        if (!active) {
-            currentAnchor.parentNode?.replaceChild(task.anchor, currentAnchor);
-            if (currentAnchor instanceof Element && elementToComponentMap.has(currentAnchor)) {
-                const comp = elementToComponentMap.get(currentAnchor)!;
-                comp.disconnectedCallback();
-            }
-            this._taskToNodeMap.set(task, task.anchor);
-        }
         this._setupTaskRecurrence(task, allVecs);
     }
 
@@ -863,44 +868,115 @@ export class CivComponent extends EventEmitter {
         this._untrackTask(task);
     }
 
-    @perNextTick
-    protected _digestTasks() {
-        const thisBatch = this._pendingTasks;
-        this._pendingTasks = [];
-        const batchSet = new WeakSet();
-        for (const task of thisBatch) {
-            if (batchSet.has(task)) {
-                continue;
-            }
-            batchSet.add(task);
-            try {
-                switch (task.type) {
-                    case DomMaintenanceTaskType.SUBTREE_RENDER:
-                        this._handleSubtreeRenderTask(task);
-                        break;
-                    case DomMaintenanceTaskType.COMPONENT_RENDER:
-                        this._handleComponentRenderTask(task);
-                        break;
-                    case DomMaintenanceTaskType.ATTR_SYNC:
-                        this._handleAttrSyncTask(task);
-                        break;
-                    case DomMaintenanceTaskType.PROP_SYNC:
-                        this._handlePropSyncTask(task);
-                        break;
-                    case DomMaintenanceTaskType.TPL_SYNC:
-                        this._handleTplSyncTask(task);
-                        break;
-                    case DomMaintenanceTaskType.SUBTREE_TOGGLE:
-                        this._handleSubtreeToggleTask(task);
-                        break;
-                    case DomMaintenanceTaskType.EVENT_BRIDGE:
-                        this._handleEventBridgeTask(task);
-                        break;
+    protected _handleElementReferenceTask(task: ElementReferenceTask) {
+        const ns = Object.create(task.ns || null);
+        ns.$element = task.tgt;
+        const { value } = this._evaluateExpr(task.expr, ns, true);
+
+        if (typeof value === 'function') {
+            value.call(this, task.tgt);
+        }
+
+        this._untrackTask(task);
+    }
+
+    private __digestTasks() {
+        let thisBatch;
+        while ((thisBatch = this._pendingTasks).length) {
+            this._pendingTasks = [];
+            const batchSet = new WeakSet();
+            for (const task of thisBatch) {
+                if (batchSet.has(task)) {
+                    continue;
                 }
-            } catch (err) {
-                this.emit('error', err, task);
+                batchSet.add(task);
+                try {
+                    switch (task.type) {
+                        case DomMaintenanceTaskType.SUBTREE_RENDER: {
+                            this._handleSubtreeRenderTask(task);
+                            break;
+                        }
+                        case DomMaintenanceTaskType.COMPONENT_RENDER: {
+                            this._handleComponentRenderTask(task);
+                            break;
+                        }
+                        case DomMaintenanceTaskType.ATTR_SYNC: {
+                            this._handleAttrSyncTask(task);
+                            break;
+                        }
+                        case DomMaintenanceTaskType.PROP_SYNC: {
+                            this._handlePropSyncTask(task);
+                            break;
+                        }
+                        case DomMaintenanceTaskType.TPL_SYNC: {
+                            this._handleTplSyncTask(task);
+                            break;
+                        }
+                        case DomMaintenanceTaskType.SUBTREE_TOGGLE: {
+                            this._handleSubtreeToggleTask(task);
+                            break;
+                        }
+                        case DomMaintenanceTaskType.EVENT_BRIDGE: {
+                            this._handleEventBridgeTask(task);
+                            break;
+                        }
+                        case DomMaintenanceTaskType.ELEMENT_REF: {
+                            this._handleElementReferenceTask(task);
+                            break;
+                        }
+                    }
+                } catch (err) {
+                    this.emit('error', err, task);
+                }
             }
         }
+
+        const thisCons = this._pendingConstructions;
+        this._pendingConstructions = [];
+        for (const con of thisCons) {
+            switch (con.type) {
+                case DomConstructionTaskType.ATTACH: {
+                    con.anchor.parentNode?.insertBefore(con.sub, con.anchor);
+                    if (con.sub.isConnected) {
+                        const event = new CustomEvent(attachEventName, {
+                            detail: { component: this }
+                        });
+                        con.sub.dispatchEvent(event);
+                    }
+                    break;
+                }
+                case DomConstructionTaskType.DETACH: {
+                    const node = con.sub;
+                    if (node.isConnected) {
+                        const event = new CustomEvent(detachEventName, {
+                            detail: { component: this },
+                            cancelable: true
+                        });
+                        const continueRemoving = node.dispatchEvent(event);
+                        if (!continueRemoving) {
+                            break;
+                        }
+                        if (node instanceof Element) {
+                            node.remove();
+                        } else {
+                            con.sub.parentNode?.removeChild(con.sub);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    @perNextTick
+    protected _digestTasks() {
+        if (document.startViewTransition) {
+            document.startViewTransition(() => {
+                this.__digestTasks();
+            });
+            return;
+        }
+        this.__digestTasks();
     }
 
     protected _setupReactivity() {

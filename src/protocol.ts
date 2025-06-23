@@ -52,11 +52,24 @@ export function parseMagicDocumentEventHandler(name: string) {
 export const significantFlagClass = '__civ_significant';
 export const subtreeTemplateFlagClass = '__civ_subtree_template';
 export const componentFlagClass = '__civ_component';
+export function isMagicRefAttr(name: string) {
+    if (name.startsWith(`${pseudoNamespacePrefix}ref`)) {
+        return true;
+    }
+    if (name.startsWith(`${pseudoNamespacePrefix}use`)) {
+        return true;
+    }
+    if (name.startsWith('ref:')) {
+        return true;
+    }
+    if (name.startsWith('use:')) {
+        return true;
+    }
+
+    return false;
+}
 export function isMagicForAttr(name: string) {
     return name === `${pseudoNamespacePrefix}for` || name === 'v-for';
-}
-export function isMagicForTemplateElement(elem: Element) {
-    return elem.hasAttribute(`${pseudoNamespacePrefix}for`) || elem.hasAttribute('v-for');
 }
 export function isMagicIfAttr(name: string) {
     return name === `${pseudoNamespacePrefix}if` || name === 'v-if';
@@ -78,9 +91,10 @@ export function isMagicPlainAttr(name: string) {
 }
 
 export const eventArgName = '$event';
+export const elementArgName = '$element';
 export const namespaceInjectionArgName = '_ns';
 
-export type Trait = 'tpl' | 'component' | 'attr' | 'prop' | 'event' | 'documentEvent' | 'for' | 'if' | 'elif' | 'else' | 'html' | 'bind' | 'plain';
+export type Trait = 'tpl' | 'component' | 'attr' | 'prop' | 'event' | 'ref' | 'documentEvent' | 'for' | 'if' | 'elif' | 'else' | 'html' | 'bind' | 'plain';
 export type Traits = [Trait, ...string[]][];
 
 export function attrToTrait(attrName: string, expr: string): Traits[number] | undefined {
@@ -99,6 +113,9 @@ export function attrToTrait(attrName: string, expr: string): Traits[number] | un
     const parsedEvent = parseMagicEventHandler(attrName);
     if (parsedEvent) {
         return ['event', parsedEvent, expr] as const;
+    }
+    if (isMagicRefAttr(attrName)) {
+        return ['ref', expr] as const;
     }
     if (isMagicForAttr(attrName)) {
         return ['for', expr, extractForLoopTokens(expr).join(',')] as const;
@@ -125,3 +142,9 @@ export function attrToTrait(attrName: string, expr: string): Traits[number] | un
     return undefined;
 }
 
+export function isMagicForTemplateElement(elem: Element) {
+    return elem.hasAttribute(`${pseudoNamespacePrefix}for`) || elem.hasAttribute('v-for');
+}
+
+export const attachEventName = `${pseudoNamespacePrefix}attach`;
+export const detachEventName = `${pseudoNamespacePrefix}detach`;
