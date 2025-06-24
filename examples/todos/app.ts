@@ -1,4 +1,4 @@
-import { CivComponent, html, Reactive, Template, getReactiveStorage } from 'civ-fe';
+import { CivComponent, html, Reactive, Template, getReactiveStorage, Foreign } from 'civ-fe';
 
 interface TodoItem {
     title: string;
@@ -42,6 +42,7 @@ export class SimpleTodo extends CivComponent {
     @Reactive()
     title = '';
 
+    @Foreign
     todoList = todoList;
 
     constructor() {

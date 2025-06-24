@@ -32,22 +32,23 @@ export class CivComponent extends EventEmitter {
     static expressionMap: Map<string, ExprFn | GenExprFn> = new Map();
     static elemTraitsLookup: Map<string, Traits> = new Map();
     readonly serial = serial++;
-    element!: Element;
+    element: Element;
     protected _pendingTasks: DomMaintenanceTask[] = [];
     protected _pendingConstructions: Map<DomConstructionTask | DomMaintenanceTask, DomConstructionTask> = new Map();
     protected _revokers?: Set<AbortController>;
     protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
-    protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<object, Element>> = new WeakMap();
-    protected _placeHolderElementToTasksMap: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
+    protected _subtreeRenderTaskTrack?: WeakMap<SubtreeRenderTask, TrieNode<object, Element>>;
+    protected _placeHolderElementToTasksMap?: WeakMap<Element, Set<DomMaintenanceTask>>;
     protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
     protected _taskToRevokerMap: WeakMap<DomMaintenanceTask, AbortController> = new WeakMap();
     protected _subtreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
+    protected _nextFrameRecept?: ReturnType<typeof requestAnimationFrame>;
 
     constructor() {
         super();
         Reflect.apply(initReactivity, this, []);
         this._digestTemplateMagicExpressions();
-        this._activateTemplate();
+        this.element = this._activateTemplate();
         elementToComponentMap.set(this.element, this);
         if ('observedAttributes' in this.constructor) {
             // @ts-ignore
@@ -301,14 +302,15 @@ export class CivComponent extends EventEmitter {
         this._pendingTasks.push(task);
         this._taskToHostElementMap.set(task, hostElem);
         if (task.type === DomMaintenanceTaskType.COMPONENT_RENDER) {
+            this._placeHolderElementToTasksMap ??= new WeakMap();
             this._placeHolderElementToTasksMap.set(task.sub, new Set());
         } else if (task.type === DomMaintenanceTaskType.SUBTREE_TOGGLE) {
             for (const [, el] of task.exprGroup) {
-                if (this._placeHolderElementToTasksMap.has(el)) {
+                if (this._placeHolderElementToTasksMap?.has(el)) {
                     this._placeHolderElementToTasksMap.get(el)!.add(task);
                 }
             }
-        } else if ('tgt' in task && this._placeHolderElementToTasksMap.has(task.tgt as any)) {
+        } else if ('tgt' in task && this._placeHolderElementToTasksMap?.has(task.tgt as any)) {
             this._placeHolderElementToTasksMap.get(task.tgt as any)!.add(task);
         }
 
@@ -685,7 +687,7 @@ export class CivComponent extends EventEmitter {
                 this._setupTaskRecurrence(task, [[unwrapped, ANY_WRITE_OP_TRIGGER]]);
             }
         }
-
+        this._subtreeRenderTaskTrack ??= new WeakMap();
         const previousTrie = this._subtreeRenderTaskTrack.get(task);
         const nextTrie = new TrieNode<object, Element>(equivalentIterable as Iterable<unknown>);
 
@@ -732,7 +734,7 @@ export class CivComponent extends EventEmitter {
         const el = task.sub;
         const instance = Reflect.construct(compCls, []) as CivComponent;
         const newEl = instance.replaceElement(el);
-        const relTasks = this._placeHolderElementToTasksMap.get(el);
+        const relTasks = this._placeHolderElementToTasksMap?.get(el);
         if (relTasks?.size) {
             for (const t of relTasks) {
                 if (t.type === DomMaintenanceTaskType.SUBTREE_TOGGLE) {
@@ -845,7 +847,8 @@ export class CivComponent extends EventEmitter {
         this._untrackTask(task);
     }
 
-    private __digestTasks() {
+
+    private __digestMaintenanceTasks() {
         let thisBatch;
         while ((thisBatch = this._pendingTasks).length) {
             this._pendingTasks = [];
@@ -895,131 +898,138 @@ export class CivComponent extends EventEmitter {
                 }
             }
         }
+    }
 
-        if (!this._pendingConstructions.length) {
+    private __digestConstructionTasks() {
+        if (!this._pendingConstructions.size) {
             return;
         }
 
-        const thisCons = this._pendingConstructions;
-        this._pendingConstructions = [];
-        for (const con of thisCons) {
-            switch (con.type) {
-                case DomConstructionTaskType.SET_ATTR: {
-                    con.sub.value = con.val;
-                    break;
-                }
-                case DomConstructionTaskType.SET_PROP: {
-                    Reflect.set(con.sub, con.prop, con.val);
-                    break;
-                }
-
-                case DomConstructionTaskType.ATTACH: {
-                    const sub = con.sub;
-                    con.anchor.parentNode?.insertBefore(sub, con.anchor);
-                    attachRoutine.call(this, sub);
-                    break;
-                }
-                case DomConstructionTaskType.REPLACE: {
-                    const tgt = con.tgt;
-                    const sub = con.sub;
-                    if (tgt instanceof Element) {
-                        tgt.replaceWith(sub);
-                    } else {
-                        tgt.parentNode?.replaceChild(sub, tgt);
-                    }
-                    attachRoutine.call(this, sub);
-                    break;
-                }
-                case DomConstructionTaskType.DETACH: {
-                    const sub = con.sub;
-                    const rm = detachRoutine.call(this, sub, con.dispose);
-                    if (!rm) {
+        for (const con of this._pendingConstructions.values()) {
+            try {
+                switch (con.type) {
+                    case DomConstructionTaskType.SET_ATTR: {
+                        con.sub.value = con.val;
                         break;
                     }
-                    if (sub instanceof Element) {
-                        sub.remove();
-                    } else {
-                        sub.parentNode?.removeChild(sub);
-                    }
-                    break;
-                }
-                case DomConstructionTaskType.SEQUENCE_MANGLE: {
-                    const [parent, start, end] = con.anchor;
-
-                    let anchorNode: Node | null = start.nextSibling;
-
-                    for (const x of con.seq) {
-                        if (x.parentElement && x.parentElement !== parent) {
-                            // Element exists but moved to another place
-                            continue;
-                        }
-                        if (anchorNode === x) {
-                            anchorNode = x.nextSibling;
-                            continue;
-                        }
-                        const isNew = !x.isConnected;
-                        parent.insertBefore(x, anchorNode);
-                        if (isNew) {
-                            attachRoutine.call(this, x);
-                        }
+                    case DomConstructionTaskType.SET_PROP: {
+                        Reflect.set(con.sub, con.prop, con.val);
+                        break;
                     }
 
-                    if (anchorNode !== end) {
-                        let itNode: Node | undefined | null = anchorNode;
-                        while (itNode) {
-                            if (itNode === end) {
-                                break;
+                    case DomConstructionTaskType.ATTACH: {
+                        const sub = con.sub;
+                        con.anchor.parentNode?.insertBefore(sub, con.anchor);
+                        attachRoutine.call(this, sub);
+                        break;
+                    }
+                    case DomConstructionTaskType.REPLACE: {
+                        const tgt = con.tgt;
+                        const sub = con.sub;
+                        if (tgt instanceof Element) {
+                            tgt.replaceWith(sub);
+                        } else {
+                            tgt.parentNode?.replaceChild(sub, tgt);
+                        }
+                        attachRoutine.call(this, sub);
+                        break;
+                    }
+                    case DomConstructionTaskType.DETACH: {
+                        const sub = con.sub;
+                        const rm = detachRoutine.call(this, sub, con.dispose);
+                        if (!rm) {
+                            break;
+                        }
+                        if (sub instanceof Element) {
+                            sub.remove();
+                        } else {
+                            sub.parentNode?.removeChild(sub);
+                        }
+                        break;
+                    }
+                    case DomConstructionTaskType.SEQUENCE_MANGLE: {
+                        const [parent, start, end] = con.anchor;
+
+                        let anchorNode: Node | null = start.nextSibling;
+
+                        for (const x of con.seq) {
+                            if (x.parentElement && x.parentElement !== parent) {
+                                // Element exists but moved to another place
+                                continue;
                             }
-                            const thisNode: Node = itNode;
-                            const rm = detachRoutine.call(this, thisNode, true);
-                            itNode = thisNode.nextSibling;
+                            if (anchorNode === x) {
+                                anchorNode = x.nextSibling;
+                                continue;
+                            }
+                            const isNew = !x.isConnected;
+                            parent.insertBefore(x, anchorNode);
+                            if (isNew) {
+                                attachRoutine.call(this, x);
+                            }
+                        }
+
+                        if (anchorNode !== end) {
+                            let itNode: Node | undefined | null = anchorNode;
+                            while (itNode) {
+                                if (itNode === end) {
+                                    break;
+                                }
+                                const thisNode: Node = itNode;
+                                const rm = detachRoutine.call(this, thisNode, true);
+                                itNode = thisNode.nextSibling;
+                                if (!rm) {
+                                    continue;
+                                }
+                                if (thisNode instanceof Element) {
+                                    thisNode.remove();
+                                } else {
+                                    thisNode.parentElement?.removeChild(thisNode);
+                                }
+                            }
+                        }
+
+                        break;
+                    }
+                    case DomConstructionTaskType.GROUP_TOGGLE: {
+                        const anchor = con.anchor;
+                        const chosen = con.chosen;
+                        if (chosen) {
+                            const previouslyConnected = chosen.isConnected;
+                            anchor.parentNode?.insertBefore(chosen, anchor);
+                            if (!previouslyConnected) {
+                                attachRoutine.call(this, chosen);
+                            }
+                        }
+                        for (const el of con.rest) {
+                            const rm = detachRoutine.call(this, el);
                             if (!rm) {
                                 continue;
                             }
-                            if (thisNode instanceof Element) {
-                                thisNode.remove();
+                            if (el instanceof Element) {
+                                el.remove();
                             } else {
-                                thisNode.parentElement?.removeChild(thisNode);
+                                el.parentNode?.removeChild(el);
                             }
                         }
+                        break;
                     }
-
-                    break;
                 }
-                case DomConstructionTaskType.GROUP_TOGGLE: {
-                    const anchor = con.anchor;
-                    const chosen = con.chosen;
-                    const previouslyConnected = chosen.isConnected;
-                    anchor.parentNode?.insertBefore(chosen, anchor);
-                    if (!previouslyConnected) {
-                        attachRoutine.call(this, chosen);
-                    }
-                    for (const el of con.rest) {
-                        const rm = detachRoutine.call(this, el, true);
-                        if (!rm) {
-                            continue;
-                        }
-                        if (el instanceof Element) {
-                            el.remove();
-                        } else {
-                            el.parentNode?.removeChild(el);
-                        }
-                    }
-                    break;
-                }
+            } catch (err) {
+                this.emit('error', err, con);
             }
         }
+        this._pendingConstructions.clear();
     }
 
     @perNextTick
     protected _digestTasks() {
-        requestAnimationFrame(() => {
-            while (true) {
-                this.__digestTasks();
-                if (!this._pendingTasks.length && !this._pendingConstructions.length) {
-                    break;
-                }
-            }
+        this.__digestMaintenanceTasks();
+        if (this._nextFrameRecept || !this._pendingConstructions.size) {
+            return;
+        }
+        this._nextFrameRecept = requestAnimationFrame(() => {
+            this.__digestConstructionTasks();
+            delete this._nextFrameRecept;
         });
     }
 
@@ -1126,4 +1136,35 @@ function detachRoutine(this: CivComponent, sub: Node, dispose?: boolean) {
     }
 
     return continueRemoving;
+}
+
+
+export function Foreign<T extends CivComponent>(target: T, key: string, _descriptor?: PropertyDescriptor) {
+    if (typeof target === 'function') {
+        throw new TypeError("Foreign decorator is intended for class properties or methods, not for classes themselves.");
+    }
+
+    let val: unknown;
+    let revoker: AbortController | undefined;
+
+    Object.defineProperty(target, key, {
+        configurable: true,
+        enumerable: true,
+        get() {
+            return val;
+        },
+        set(this: T, value) {
+            if (value === val) {
+                return true;
+            }
+            val = value;
+            if (revoker) {
+                revoker.abort();
+                this._revokers?.delete(revoker);
+                revoker = undefined;
+            }
+            revoker = this.foreign(value);
+            return true;
+        }
+    });
 }

@@ -295,14 +295,12 @@ export function strongerAssign(target: object, source: object) {
 export const setImmediate = (function setImmediateFactory() {
     const channel = new MessageChannel();
     const callbacks: Function[] = [];
-    let index = 0;
-
+    
     channel.port2.onmessage = function processCallbacks() {
-        while (index < callbacks.length) {
-            callbacks[index++]();
+        for (const x of callbacks) {
+            x.call(globalThis);
         }
         callbacks.length = 0;
-        index = 0;
     };
 
     return function setImmediate(callback: Function) {
