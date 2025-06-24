@@ -82,8 +82,15 @@ export function ReactiveAttr<T extends ReactivityHost>() {
 }
 
 export function setupAttrObserver(this: ReactivityHost & ReactiveAttrMixin) {
+    if (!('attributeChangedCallback' in this && typeof this.attributeChangedCallback === 'function')) {
+        return;
+    }
     if (!this.hasOwnProperty(REACTIVE_ATTR_OBSERVER)) {
         const observedAttributes = new Set(Reflect.get(this.constructor, 'observedAttributes') || []);
+        if (observedAttributes.size === 0) {
+            return;
+        }
+
         this[REACTIVE_ATTR_OBSERVER] = new MutationObserver((mutations) => {
             for (const x of mutations) {
                 if (x.type === 'attributes') {

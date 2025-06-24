@@ -60,6 +60,7 @@ export class SimpleTodo extends CivComponent {
             title: this.title.trim(),
             done: false
         });
+        this.title = ''; // Clear the input field after adding
     }
 
     dropTodo(todo: TodoItem): void {
@@ -69,12 +70,11 @@ export class SimpleTodo extends CivComponent {
         }
     }
 
-    override connectedCallback(): void {
-        super.connectedCallback();
+    connectedCallback(): void {
+        this.foreign(todoList);
     }
 
-    override disconnectedCallback(): void {
-        super.disconnectedCallback();
+    disconnectedCallback(): void {
         this._cleanup();
     }
 }

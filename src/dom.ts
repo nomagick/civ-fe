@@ -85,10 +85,26 @@ export type DomMaintenanceTask =
 
 
 export enum DomConstructionTaskType {
+    SET_ATTR = 'setAttr',
+    SET_PROP = 'setProp',
     ATTACH = 'attach',
     DETACH = 'detach',
+    REPLACE = 'replace',
+    SEQUENCE_MANGLE = 'sequenceMangle',
+    GROUP_TOGGLE = 'groupToggle',
 }
 
+export interface SetAttrTask {
+    type: DomConstructionTaskType.SET_ATTR;
+    sub: Attr;
+    val: any;
+}
+export interface SetPropTask {
+    type: DomConstructionTaskType.SET_PROP;
+    sub: Node;
+    prop: string;
+    val: any;
+}
 export interface NodeAttachTask {
     type: DomConstructionTaskType.ATTACH;
     sub: Node;
@@ -97,6 +113,24 @@ export interface NodeAttachTask {
 export interface NodeDetachTask {
     type: DomConstructionTaskType.DETACH;
     sub: Node;
+    dispose?: boolean;
+}
+export interface NodeReplaceTask {
+    type: DomConstructionTaskType.REPLACE;
+    tgt: Node;
+    sub: Node;
+}
+export interface NodeSequenceMangleTask {
+    type: DomConstructionTaskType.SEQUENCE_MANGLE;
+    anchor: [Node, Node, Node];
+    seq: Node[];
+}
+export interface NodeGroupToggleTask {
+    type: DomConstructionTaskType.GROUP_TOGGLE;
+    anchor: Node;
+    chosen: Node | null;
+    rest: Node[];
 }
 
-export type DomConstructionTask = NodeAttachTask | NodeDetachTask;
+export type DomConstructionTask = SetAttrTask | SetPropTask | NodeAttachTask |
+    NodeDetachTask | NodeReplaceTask | NodeSequenceMangleTask | NodeGroupToggleTask;

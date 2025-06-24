@@ -9,7 +9,7 @@ import {
 } from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
 import { parseTemplate } from "./utils/template-parser";
-import { AttrSyncTask, ComponentRenderTask, DomConstructionTask, DomConstructionTaskType, DomMaintenanceTask, DomMaintenanceTaskType, ElementReferenceTask, EventBridgeTask, PropSyncTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask } from "./dom";
+import { AttrSyncTask, ComponentRenderTask, DomConstructionTask, DomConstructionTaskType, DomMaintenanceTask, DomMaintenanceTaskType, ElementReferenceTask, EventBridgeTask, NodeReplaceTask, PropSyncTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask } from "./dom";
 import { TrieNode } from "./lib/trie";
 import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EventEmitter } from "./lib/event-emitter";
@@ -34,11 +34,11 @@ export class CivComponent extends EventEmitter {
     readonly serial = serial++;
     element!: Element;
     protected _pendingTasks: DomMaintenanceTask[] = [];
-    protected _pendingConstructions: DomConstructionTask[] = [];
-    protected _revokers: Set<AbortController> = new Set();
+    protected _pendingConstructions: Map<DomConstructionTask | DomMaintenanceTask, DomConstructionTask> = new Map();
+    protected _revokers?: Set<AbortController>;
     protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
     protected _subtreeRenderTaskTrack: WeakMap<SubtreeRenderTask, TrieNode<object, Element>> = new WeakMap();
-    protected _placeHolderElementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
+    protected _placeHolderElementToTasksMap: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
     protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
     protected _taskToRevokerMap: WeakMap<DomMaintenanceTask, AbortController> = new WeakMap();
     protected _subtreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
@@ -60,36 +60,14 @@ export class CivComponent extends EventEmitter {
 
     foreign(eventTarget: ReactivityHost) {
         const abortCtl = this[REACTIVE_KIT].connect(eventTarget[REACTIVE_KIT]);
+        this._revokers ??= new Set();
         this._revokers.add(abortCtl);
 
         return abortCtl;
     }
 
-    connectedCallback() {
-        this.emit('connected');
-    }
-    disconnectedCallback() {
-        this.emit('disconnected');
-    }
-    // connectedMoveCallback() {
-    //     this.emit('connectedMove');
-    // }
-    // adoptedCallback() {
-    //     this.emit('adopted');
-    // }
-    attributeChangedCallback(name: string, oldValue: string, newValue: string) {
-        this.emit('attributeChange', name, oldValue, newValue);
-    }
-
-    replaceElement(el: Element) {
+    replaceElement(el: Element, relTask?: ComponentRenderTask) {
         const targetElement = this.element;
-        const childComponents: CivComponent[] = [];
-        targetElement.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
-            const comp = elementToComponentMap.get(el);
-            if (comp) {
-                childComponents.push(comp);
-            }
-        });
 
         const attributes = el.attributes;
         for (let i = attributes.length - 1; i >= 0; i--) {
@@ -137,16 +115,20 @@ export class CivComponent extends EventEmitter {
             });
         });
 
-        el.replaceWith(targetElement);
-        if (targetElement.isConnected) {
-            this.connectedCallback();
-            childComponents.forEach((x) => x.connectedCallback());
-        }
+        const tsk: NodeReplaceTask = {
+            type: DomConstructionTaskType.REPLACE,
+            tgt: el,
+            sub: targetElement,
+        };
+        this._setConstruction(relTask || tsk, tsk);
 
         return targetElement;
     }
 
     protected _cleanup() {
+        if (!this._revokers) {
+            return;
+        }
         for (const x of this._revokers) {
             x.abort();
         }
@@ -318,6 +300,17 @@ export class CivComponent extends EventEmitter {
     protected _trackTask(task: DomMaintenanceTask, hostElem: Element) {
         this._pendingTasks.push(task);
         this._taskToHostElementMap.set(task, hostElem);
+        if (task.type === DomMaintenanceTaskType.COMPONENT_RENDER) {
+            this._placeHolderElementToTasksMap.set(task.sub, new Set());
+        } else if (task.type === DomMaintenanceTaskType.SUBTREE_TOGGLE) {
+            for (const [, el] of task.exprGroup) {
+                if (this._placeHolderElementToTasksMap.has(el)) {
+                    this._placeHolderElementToTasksMap.get(el)!.add(task);
+                }
+            }
+        } else if ('tgt' in task && this._placeHolderElementToTasksMap.has(task.tgt as any)) {
+            this._placeHolderElementToTasksMap.get(task.tgt as any)!.add(task);
+        }
 
         let taskSet = this._subtreeTaskTrack.get(hostElem);
         if (!taskSet) {
@@ -333,6 +326,9 @@ export class CivComponent extends EventEmitter {
         if (hostElem) {
             this._subtreeTaskTrack.get(hostElem)?.delete(task);
         }
+    }
+    protected _setConstruction(rel: DomConstructionTask | DomMaintenanceTask, task: DomConstructionTask) {
+        this._pendingConstructions.set(rel, task);
     }
 
     protected _renderTemplateElem(elem: Element = this.element, ns?: Record<string, unknown>) {
@@ -543,6 +539,16 @@ export class CivComponent extends EventEmitter {
 
                         break;
                     }
+                    case 'ref': {
+                        const [expr] = args;
+                        this._trackTask({
+                            type: DomMaintenanceTaskType.ELEMENT_REF,
+                            tgt: el,
+                            expr,
+                            ns,
+                        }, elem);
+                        break;
+                    }
                     default: {
                         break;
                     }
@@ -683,10 +689,7 @@ export class CivComponent extends EventEmitter {
         const previousTrie = this._subtreeRenderTaskTrack.get(task);
         const nextTrie = new TrieNode<object, Element>(equivalentIterable as Iterable<unknown>);
 
-        const [parent, start, end] = task.anchor;
-
         const newSequence: Node[] = [];
-        const newElements: Element[] = [];
 
         for (const _x of it) {
             const cloneNs = Object.create(task.ns || null);
@@ -702,80 +705,15 @@ export class CivComponent extends EventEmitter {
 
             const subTreeElem = task.tpl.cloneNode(true) as Element;
             this._renderTemplateElem(subTreeElem, cloneNs);
-            newElements.push(subTreeElem);
             nextTrie.insert(...series).payload = subTreeElem;
             newSequence.push(subTreeElem);
         }
 
-        if (newElements.length) {
-            this._digestTasks();
-        }
-
-        let anchorNode: Node | null = start.nextSibling;
-
-        for (const x of newSequence) {
-            if (x.parentElement && x.parentElement !== parent) {
-                // Element exists but moved to another place
-                continue;
-            }
-            if (anchorNode === x) {
-                anchorNode = x.nextSibling;
-                continue;
-            }
-            this._pendingConstructions.push({
-                type: DomConstructionTaskType.ATTACH,
-                sub: x,
-                anchor: anchorNode || end
-            });
-        }
-
-        if (anchorNode !== end) {
-            let itNode: Node | undefined | null;
-            while (itNode = end.previousSibling) {
-                if (itNode instanceof Element) {
-                    const taskSet = this._subtreeTaskTrack.get(itNode as Element);
-                    if (taskSet) {
-                        for (const t of taskSet) {
-                            const revoker = this._taskToRevokerMap.get(t);
-                            revoker?.abort();
-                            this._taskToRevokerMap.delete(t);
-                        }
-                    }
-                    this._subtreeTaskTrack.delete(itNode as Element);
-                    this._pendingConstructions.push({
-                        type: DomConstructionTaskType.DETACH,
-                        sub: itNode,
-                    });
-
-                    itNode.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
-                        const comp = elementToComponentMap.get(el);
-                        if (comp) {
-                            comp.disconnectedCallback();
-                            (comp[Symbol.dispose] || comp[Symbol.asyncDispose])?.();
-                        }
-                    });
-                } else {
-                    this._pendingConstructions.push({
-                        type: DomConstructionTaskType.DETACH,
-                        sub: itNode,
-                    });
-                }
-                if (itNode === anchorNode) {
-                    break;
-                }
-            }
-        }
-
-        if (parent.isConnected) {
-            for (const x of newElements) {
-                x.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
-                    const comp = elementToComponentMap.get(el);
-                    if (comp) {
-                        comp.connectedCallback();
-                    }
-                });
-            }
-        }
+        this._setConstruction(task, {
+            type: DomConstructionTaskType.SEQUENCE_MANGLE,
+            anchor: task.anchor,
+            seq: newSequence,
+        });
 
         if (isReactive) {
             this._subtreeRenderTaskTrack.set(task, nextTrie);
@@ -793,56 +731,83 @@ export class CivComponent extends EventEmitter {
         }
         const el = task.sub;
         const instance = Reflect.construct(compCls, []) as CivComponent;
-        this._placeHolderElementToComponentMap.set(el, instance);
-        instance.replaceElement(el);
+        const newEl = instance.replaceElement(el);
+        const relTasks = this._placeHolderElementToTasksMap.get(el);
+        if (relTasks?.size) {
+            for (const t of relTasks) {
+                if (t.type === DomMaintenanceTaskType.SUBTREE_TOGGLE) {
+                    for (const pair of t.exprGroup) {
+                        if (pair[1] === el) {
+                            pair[1] = newEl;
+                        }
+                    }
+                } else if (t.type === DomMaintenanceTaskType.PROP_SYNC) {
+                    t.tgt = instance;
+                } else if ('tgt' in t) {
+                    t.tgt = newEl;
+                }
+            }
+        }
     }
 
     protected _handleAttrSyncTask(task: AttrSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
-        // @ts-ignore
-        task.attr.value = value;
+        this._setConstruction(task, {
+            type: DomConstructionTaskType.SET_ATTR,
+            sub: task.attr,
+            val: value,
+        });
         this._setupTaskRecurrence(task, vecs);
     }
 
     protected _handlePropSyncTask(task: PropSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
-        if (this._placeHolderElementToComponentMap.has(task.tgt as Element)) {
-            task.tgt = this._placeHolderElementToComponentMap.get(task.tgt as Element) as CivComponent;
+        if (task.tgt instanceof Node) {
+            this._setConstruction(task, {
+                type: DomConstructionTaskType.SET_PROP,
+                sub: task.tgt,
+                prop: task.prop,
+                val: value,
+            });
+        } else {
+            Reflect.set(task.tgt, task.prop, value);
         }
-        Reflect.set(task.tgt, task.prop, value);
         this._setupTaskRecurrence(task, vecs);
     }
 
     protected _handleTplSyncTask(task: TplSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
+        this._setConstruction(task, {
+            type: DomConstructionTaskType.SET_PROP,
+            sub: task.text,
+            prop: 'nodeValue',
+            val: value,
+        });
         this._setupTaskRecurrence(task, vecs);
-        task.text.nodeValue = value as string;
     }
 
     protected _handleSubtreeToggleTask(task: SubtreeToggleTask) {
         const allVecs = [];
-        let chosen = false;
+        let chosen = null;
+        const rest = [];
         for (const [expr, el] of task.exprGroup) {
             if (chosen) {
-                if (el.isConnected) {
-                    this._pendingConstructions.push({
-                        type: DomConstructionTaskType.DETACH,
-                        sub: el
-                    });
-                }
+                rest.push(el);
                 continue;
             }
             const { vecs: vecs, value } = this._evaluateExpr(expr, task.ns);
             allVecs.push(...vecs);
             if (value) {
-                chosen = true;
-                this._pendingConstructions.push({
-                    type: DomConstructionTaskType.ATTACH,
-                    sub: el,
-                    anchor: task.anchor
-                });
+                chosen = el;
             }
         }
+
+        this._setConstruction(task, {
+            type: DomConstructionTaskType.GROUP_TOGGLE,
+            anchor: task.anchor,
+            chosen: chosen,
+            rest,
+        });
 
         this._setupTaskRecurrence(task, allVecs);
     }
@@ -931,35 +896,113 @@ export class CivComponent extends EventEmitter {
             }
         }
 
+        if (!this._pendingConstructions.length) {
+            return;
+        }
+
         const thisCons = this._pendingConstructions;
         this._pendingConstructions = [];
         for (const con of thisCons) {
             switch (con.type) {
+                case DomConstructionTaskType.SET_ATTR: {
+                    con.sub.value = con.val;
+                    break;
+                }
+                case DomConstructionTaskType.SET_PROP: {
+                    Reflect.set(con.sub, con.prop, con.val);
+                    break;
+                }
+
                 case DomConstructionTaskType.ATTACH: {
-                    con.anchor.parentNode?.insertBefore(con.sub, con.anchor);
-                    if (con.sub.isConnected) {
-                        const event = new CustomEvent(attachEventName, {
-                            detail: { component: this }
-                        });
-                        con.sub.dispatchEvent(event);
+                    const sub = con.sub;
+                    con.anchor.parentNode?.insertBefore(sub, con.anchor);
+                    attachRoutine.call(this, sub);
+                    break;
+                }
+                case DomConstructionTaskType.REPLACE: {
+                    const tgt = con.tgt;
+                    const sub = con.sub;
+                    if (tgt instanceof Element) {
+                        tgt.replaceWith(sub);
+                    } else {
+                        tgt.parentNode?.replaceChild(sub, tgt);
                     }
+                    attachRoutine.call(this, sub);
                     break;
                 }
                 case DomConstructionTaskType.DETACH: {
-                    const node = con.sub;
-                    if (node.isConnected) {
-                        const event = new CustomEvent(detachEventName, {
-                            detail: { component: this },
-                            cancelable: true
-                        });
-                        const continueRemoving = node.dispatchEvent(event);
-                        if (!continueRemoving) {
-                            break;
+                    const sub = con.sub;
+                    const rm = detachRoutine.call(this, sub, con.dispose);
+                    if (!rm) {
+                        break;
+                    }
+                    if (sub instanceof Element) {
+                        sub.remove();
+                    } else {
+                        sub.parentNode?.removeChild(sub);
+                    }
+                    break;
+                }
+                case DomConstructionTaskType.SEQUENCE_MANGLE: {
+                    const [parent, start, end] = con.anchor;
+
+                    let anchorNode: Node | null = start.nextSibling;
+
+                    for (const x of con.seq) {
+                        if (x.parentElement && x.parentElement !== parent) {
+                            // Element exists but moved to another place
+                            continue;
                         }
-                        if (node instanceof Element) {
-                            node.remove();
+                        if (anchorNode === x) {
+                            anchorNode = x.nextSibling;
+                            continue;
+                        }
+                        const isNew = !x.isConnected;
+                        parent.insertBefore(x, anchorNode);
+                        if (isNew) {
+                            attachRoutine.call(this, x);
+                        }
+                    }
+
+                    if (anchorNode !== end) {
+                        let itNode: Node | undefined | null = anchorNode;
+                        while (itNode) {
+                            if (itNode === end) {
+                                break;
+                            }
+                            const thisNode: Node = itNode;
+                            const rm = detachRoutine.call(this, thisNode, true);
+                            itNode = thisNode.nextSibling;
+                            if (!rm) {
+                                continue;
+                            }
+                            if (thisNode instanceof Element) {
+                                thisNode.remove();
+                            } else {
+                                thisNode.parentElement?.removeChild(thisNode);
+                            }
+                        }
+                    }
+
+                    break;
+                }
+                case DomConstructionTaskType.GROUP_TOGGLE: {
+                    const anchor = con.anchor;
+                    const chosen = con.chosen;
+                    const previouslyConnected = chosen.isConnected;
+                    anchor.parentNode?.insertBefore(chosen, anchor);
+                    if (!previouslyConnected) {
+                        attachRoutine.call(this, chosen);
+                    }
+                    for (const el of con.rest) {
+                        const rm = detachRoutine.call(this, el, true);
+                        if (!rm) {
+                            continue;
+                        }
+                        if (el instanceof Element) {
+                            el.remove();
                         } else {
-                            con.sub.parentNode?.removeChild(con.sub);
+                            el.parentNode?.removeChild(el);
                         }
                     }
                     break;
@@ -970,13 +1013,14 @@ export class CivComponent extends EventEmitter {
 
     @perNextTick
     protected _digestTasks() {
-        if (document.startViewTransition) {
-            document.startViewTransition(() => {
+        requestAnimationFrame(() => {
+            while (true) {
                 this.__digestTasks();
-            });
-            return;
-        }
-        this.__digestTasks();
+                if (!this._pendingTasks.length && !this._pendingConstructions.length) {
+                    break;
+                }
+            }
+        });
     }
 
     protected _setupReactivity() {
@@ -1023,4 +1067,63 @@ export class CivComponent extends EventEmitter {
             console.error(`${this.constructor.name} Error:`, ...args);
         });
     }
+}
+
+function attachRoutine(this: CivComponent, sub: Node) {
+    if (sub.isConnected) {
+        const event = new CustomEvent(attachEventName, {
+            detail: { component: this }
+        });
+        sub.dispatchEvent(event);
+        if (sub instanceof Element) {
+            const hdl = (el: Element) => {
+                const comp = elementToComponentMap.get(el);
+                if (!comp) {
+                    return;
+                }
+                if ('connectedCallback' in comp && typeof comp.connectedCallback === 'function') {
+                    Reflect.apply(comp.connectedCallback, comp, []);
+                }
+            };
+            hdl(sub);
+            sub.querySelectorAll(`.${componentFlagClass}`).forEach(hdl);
+        }
+    }
+}
+
+function detachRoutine(this: CivComponent, sub: Node, dispose?: boolean) {
+    const event = new CustomEvent(detachEventName, {
+        detail: { component: this },
+        cancelable: true
+    });
+    const continueRemoving = sub.dispatchEvent(event);
+    if (dispose) {
+        const taskSet = this._subtreeTaskTrack.get(sub as Element);
+        if (taskSet) {
+            for (const t of taskSet) {
+                const revoker = this._taskToRevokerMap.get(t);
+                revoker?.abort();
+                this._taskToRevokerMap.delete(t);
+            }
+        }
+        this._subtreeTaskTrack.delete(sub as Element);
+    }
+    if (sub instanceof Element) {
+        const hdl = (el: Element) => {
+            const comp = elementToComponentMap.get(el);
+            if (!comp) {
+                return;
+            }
+            if (sub.isConnected && 'disconnectedCallback' in comp && typeof comp.disconnectedCallback === 'function') {
+                Reflect.apply(comp.disconnectedCallback, comp, []);
+            }
+            if (dispose) {
+                (comp[Symbol.dispose] || comp[Symbol.asyncDispose])?.call(comp);
+            }
+        }
+        hdl(sub);
+        sub.querySelectorAll(`.${componentFlagClass}`).forEach(hdl);
+    }
+
+    return continueRemoving;
 }

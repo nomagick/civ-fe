@@ -15,16 +15,14 @@ export class Counter extends CivComponent {
 
     interval?: ReturnType<typeof setInterval>;
 
-    override connectedCallback(): void {
-        super.connectedCallback();
+    connectedCallback(): void {
         if (this.interval) {
             clearInterval(this.interval);
         }
         this.interval = setInterval(() => this.count++, 1000);
     }
 
-    override disconnectedCallback(): void {
-        super.disconnectedCallback();
+    disconnectedCallback(): void {
         if (this.interval) {
             clearInterval(this.interval);
             delete this.interval;
