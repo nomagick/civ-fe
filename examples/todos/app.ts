@@ -39,7 +39,7 @@ const todoList = getReactiveStorage<TodoItem[]>('todoList', []);
 )
 export class SimpleTodo extends CivComponent {
 
-    @Reactive()
+    @Reactive
     title = '';
 
     @Foreign
@@ -47,10 +47,9 @@ export class SimpleTodo extends CivComponent {
 
     constructor() {
         super();
-        this.foreign(todoList);
     }
 
-    addTodo(ev?: Event): void {
+    addTodo(ev?: Event) {
         if (ev) {
             ev.preventDefault();
         }
@@ -64,19 +63,11 @@ export class SimpleTodo extends CivComponent {
         this.title = ''; // Clear the input field after adding
     }
 
-    dropTodo(todo: TodoItem): void {
+    dropTodo(todo: TodoItem) {
         const index = this.todoList.indexOf(todo);
         if (index > -1) {
             this.todoList.splice(index, 1);
         }
-    }
-
-    connectedCallback(): void {
-        this.foreign(todoList);
-    }
-
-    disconnectedCallback(): void {
-        this._cleanup();
     }
 }
 

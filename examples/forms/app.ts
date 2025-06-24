@@ -1,15 +1,17 @@
-import { CivComponent, html, Reactive, Template, getReactiveStorage } from 'civ-fe';
+import { CivComponent, html, Reactive, Template } from 'civ-fe';
 
-interface TodoItem {
-    title: string;
-    done: boolean;
+
+const EMAILS = ["johnsmith@outlook.com", "mary@gmail.com", "djacobs@move.org", "test@example.com"];
+
+function fetchUserName(name: string) {
+    return new Promise((resolve) => {
+        setTimeout(() => resolve(EMAILS.indexOf(name) > -1), 200);
+    });
 }
-
-const todoList = getReactiveStorage<TodoItem[]>('todoList', []);
 
 @Template(
     html`
-<form @submit={fn}>
+<form $ref="setupFormValidation($element, onSubmit)">
   <h1>Sign Up</h1>
   <div class="field-block">
     <input
@@ -17,78 +19,68 @@ const todoList = getReactiveStorage<TodoItem[]>('todoList', []);
       type="email"
       placeholder="Email"
       required
-      use:validate={[userNameExists]}
+      $ref="setupInputValidation($element, userNameExists)"
     />
-    {errors.email && <ErrorMessage error={errors.email} />}
+    <span civ:if="errors.email" class="error-message" .textContent="errors.email"></span>
   </div>
   <div class="field-block">
     <input
       type="password"
       name="password"
       placeholder="Password"
-      required=""
+      required
       minlength="8"
-      onInput={(e) => setFields("password", e.target.value)}
-      use:validate
+      @input="fields.password = $event.target.value"
+      $ref="setupInputValidation"
     />
-    {errors.password && <ErrorMessage error={errors.password} />}
+    <span civ:if="errors.password" class="error-message" .textContent="errors.password"></span>
   </div>
   <div class="field-block">
     <input
       type="password"
       name="confirmpassword"
       placeholder="Confirm Password"
-      required=""
-      use:validate={[matchesPassword]}
+      required
+      $ref="setupInputValidation($element, matchesPassword)"
     />
-    {errors.confirmpassword && (
-      <ErrorMessage error={errors.confirmpassword} />
-    )}
+    <span civ:if="errors.confirmpassword" class="error-message" .textContent="errors.confirmpassword"></span>
   </div>
   <button type="submit">Submit</button>
-</form>`
-)
-export class SimpleTodo extends CivComponent {
+</form>`)
+export class Forms extends CivComponent {
 
-    @Reactive()
+    @Reactive
     title = '';
 
-    todoList = todoList;
+    @Reactive
+    fields = {
+        email: '',
+        password: '',
+    }
+
+    props = {} as { [k: string]: { elem: HTMLInputElement, validators: ((value: string) => boolean)[] } };
 
     constructor() {
         super();
-        this.foreign(todoList);
     }
 
-    addTodo(ev?: Event): void {
+    onSubmit(ev?: Event) {
         if (ev) {
             ev.preventDefault();
         }
-        if (!this.title || this.title.trim() === '') {
-            return;
-        }
-        this.todoList.unshift({
-            title: this.title.trim(),
-            done: false
-        });
+        console.log('Done');
     }
 
-    dropTodo(todo: TodoItem): void {
-        const index = this.todoList.indexOf(todo);
-        if (index > -1) {
-            this.todoList.splice(index, 1);
+    setupFormValidation(el: HTMLFormElement, cb?: Function) {
+        el.setAttribute('novalidate', '');
+        el.onsubmit=(ev)=> {
+            ev.preventDefault();
+
+            cb?.();
         }
     }
 
-    override connectedCallback(): void {
-        super.connectedCallback();
-    }
-
-    override disconnectedCallback(): void {
-        super.disconnectedCallback();
-        this._cleanup();
-    }
 }
 
-new SimpleTodo().replaceElement(document.getElementById('app')!);
+new Forms().replaceElement(document.getElementById('app')!);
 

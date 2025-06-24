@@ -10,19 +10,19 @@ import { CivComponent, css, html, Reactive, Template } from 'civ-fe';
 )
 export class Counter extends CivComponent {
 
-    @Reactive()
+    @Reactive
     count = 0;
 
     interval?: ReturnType<typeof setInterval>;
 
-    connectedCallback(): void {
+    connectedCallback() {
         if (this.interval) {
             clearInterval(this.interval);
         }
         this.interval = setInterval(() => this.count++, 1000);
     }
 
-    disconnectedCallback(): void {
+    disconnectedCallback() {
         if (this.interval) {
             clearInterval(this.interval);
             delete this.interval;

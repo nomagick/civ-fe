@@ -53,6 +53,9 @@ export const significantFlagClass = '__civ_significant';
 export const subtreeTemplateFlagClass = '__civ_subtree_template';
 export const componentFlagClass = '__civ_component';
 export function isMagicRefAttr(name: string) {
+    if (name.startsWith('$')) {
+        return true;
+    }
     if (name.startsWith(`${pseudoNamespacePrefix}ref`)) {
         return true;
     }

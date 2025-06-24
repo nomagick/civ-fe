@@ -13,8 +13,17 @@ export interface ReactivityOpts<T extends ReactivityHost> {
     initializers?: ((this: T) => void)[];
 }
 
-export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>) {
-    return function (target: T, key: string, _descriptor?: PropertyDescriptor) {
+
+export function Reactive<T extends ReactivityHost>(target: T, key: string, _descriptor?: PropertyDescriptor): void;
+export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>):
+    (target: T, key: string, _descriptor?: PropertyDescriptor) => void;
+export function Reactive<T extends ReactivityHost>(...args: unknown[]) {
+    let config: ReactivityOpts<T> | undefined;
+    if (args.length === 1 && typeof args[0] === 'object') {
+        config = args[0] as ReactivityOpts<T>;
+    }
+
+    function reactiveDecorator(target: T, key: string, _descriptor?: PropertyDescriptor) {
         if (typeof target === 'function') {
             throw new TypeError("Reactivity decorator is intended for class properties or methods, not for classes themselves.");
         }
@@ -47,6 +56,12 @@ export function Reactive<T extends ReactivityHost>(config?: ReactivityOpts<T>) {
             }
         });
     };
+
+    if (args.length >= 2) { 
+        return reactiveDecorator.apply(null, args as [T, string, PropertyDescriptor | undefined]);
+    }
+
+    return reactiveDecorator;
 }
 
 export function initReactivity(this: ReactivityHost) {
