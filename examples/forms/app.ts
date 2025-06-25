@@ -1,4 +1,4 @@
-import { CivComponent, html, Reactive, Template } from 'civ-fe';
+import { CivComponent, html, Reactive, Template, css } from 'civ-fe';
 
 
 const EMAILS = ["johnsmith@outlook.com", "mary@gmail.com", "djacobs@move.org", "test@example.com"];
@@ -21,7 +21,7 @@ function fetchUserName(name: string) {
       required
       $ref="setupInputValidation($element, userNameExists)"
     />
-    <span civ:if="errors.email" class="error-message" .textContent="errors.email"></span>
+    <span civ:if="errors.email" class="error-message" .innerText="errors.email">{errors.email}</span>
   </div>
   <div class="field-block">
     <input
@@ -33,7 +33,7 @@ function fetchUserName(name: string) {
       @input="fields.password = $event.target.value"
       $ref="setupInputValidation"
     />
-    <span civ:if="errors.password" class="error-message" .textContent="errors.password"></span>
+    <span civ:if="errors.password" class="error-message" .innerText="errors.password"></span>
   </div>
   <div class="field-block">
     <input
@@ -43,10 +43,23 @@ function fetchUserName(name: string) {
       required
       $ref="setupInputValidation($element, matchesPassword)"
     />
-    <span civ:if="errors.confirmpassword" class="error-message" .textContent="errors.confirmpassword"></span>
+    <span civ:if="errors.confirmpassword" class="error-message" .innerText="errors.confirmpassword"></span>
   </div>
   <button type="submit">Submit</button>
-</form>`)
+</form>`, css`
+input {
+  display: inline-block;
+  padding: 4px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+.error-message {
+  color: red;
+  padding: 8px;
+}
+.error-input {
+  box-shadow: 0px 0px 2px 1px red;
+}`)
 export class Forms extends CivComponent {
 
     @Reactive
@@ -57,6 +70,7 @@ export class Forms extends CivComponent {
         email: '',
         password: '',
     }
+
     @Reactive
     errors = {} as Record<string, string>;
 

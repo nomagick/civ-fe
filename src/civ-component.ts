@@ -451,18 +451,18 @@ export class CivComponent extends EventEmitter {
                         const exprGroup: [string, Element][] = [
                             [expr, el]
                         ];
-                        let nextSibling;
-                        while (nextSibling = el.nextSibling) {
-                            if (nextSibling instanceof Comment) {
+                        let ptr: ChildNode | null = el;
+                        while (ptr = ptr.nextSibling) {
+                            if (ptr instanceof Comment) {
                                 continue;
-                            } else if (nextSibling instanceof Text) {
-                                if (nextSibling.textContent?.trim()) {
+                            } else if (ptr instanceof Text) {
+                                if (ptr.textContent?.trim()) {
                                     break;
                                 }
                                 continue;
                             }
-                            if (nextSibling instanceof Element) {
-                                const elSerial = nextSibling.getAttribute(significantFlagClass);
+                            if (ptr instanceof Element) {
+                                const elSerial = ptr.getAttribute(significantFlagClass);
                                 if (!elSerial) {
                                     break;
                                 }
@@ -470,13 +470,13 @@ export class CivComponent extends EventEmitter {
                                 const elifTrait = traits?.find(([t]) => t === 'elif');
                                 if (elifTrait) {
                                     const [, expr] = elifTrait;
-                                    exprGroup.push([expr, nextSibling]);
+                                    exprGroup.push([expr, ptr]);
                                     continue;
                                 }
 
                                 const elseTrait = traits?.find(([t]) => t === 'else');
                                 if (elseTrait) {
-                                    exprGroup.push(['', nextSibling]);
+                                    exprGroup.push(['', ptr]);
                                     break;
                                 }
                             }
@@ -511,7 +511,7 @@ export class CivComponent extends EventEmitter {
                         this._trackTask({
                             type: DomMaintenanceTaskType.PROP_SYNC,
                             tgt: el,
-                            prop: 'textContent',
+                            prop: 'innerText',
                             expr,
                             ns,
                         }, elem);
