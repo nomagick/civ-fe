@@ -1,4 +1,4 @@
-import { CivComponent, html, Reactive, Template, getReactiveStorage, Foreign } from 'civ-fe';
+import { CivComponent, xhtml, Reactive, Template, getReactiveStorage, Foreign } from 'civ-fe';
 
 interface TodoItem {
     title: string;
@@ -8,13 +8,13 @@ interface TodoItem {
 const todoList = getReactiveStorage<TodoItem[]>('todoList', []);
 
 @Template(
-    html`
+    xhtml`
 <div>
     <h3>Simple Todos Example</h3>
     <form @submit="addTodo">
     <input
         placeholder="enter todo and click +"
-        required
+        required=""
         .value="title"
         @input="title = $event.target.value"
     />

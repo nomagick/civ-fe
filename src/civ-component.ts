@@ -284,7 +284,10 @@ export class CivComponent extends EventEmitter {
             return this.element;
         }
 
-        const rootElement = document.importNode(tplDom.body.firstElementChild || tplDom.head, true);
+        const tgtNode = tplDom instanceof HTMLDocument ?
+            (tplDom.body.firstElementChild || tplDom.head) : tplDom.documentElement;
+
+        const rootElement = document.importNode(tgtNode, true);
         rootElement.classList.add(identify(this.constructor as typeof CivComponent));
 
         if (isMagicForTemplateElement(rootElement)) {

@@ -5,7 +5,7 @@ export const REACTIVE_TEMPLATE_IDENTIFIER = Symbol('REACTIVE_TEMPLATE_IDENTIFIER
 export const REACTIVE_TEMPLATE_DOM = Symbol('REACTIVE_TEMPLATE_DOM');
 export const REACTIVE_TEMPLATE_SHEET = Symbol('REACTIVE_TEMPLATE_SHEET');
 export interface ReactiveTemplateMixin {
-    new (...args: unknown[]): unknown;
+    new(...args: unknown[]): unknown;
     [REACTIVE_TEMPLATE_IDENTIFIER]?: string;
     [REACTIVE_TEMPLATE_DOM]?: Document;
     [REACTIVE_TEMPLATE_SHEET]?: CSSStyleSheet;
@@ -46,6 +46,19 @@ export function HTML(text: string) {
     };
 }
 
+export function XHTML(text: string) {
+    return function <T extends ReactiveTemplateMixin>(target: T) {
+        if (typeof target !== 'function') {
+            throw new TypeError("XHTML decorator is intended for classes themselves.");
+        }
+        identify(target);
+
+        const doc = new DOMParser().parseFromString(text, 'application/xhtml+xml');
+
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
+    };
+}
+
 function mangleSelectorText(cssRules: CSSRuleList, identifier: string): void {
 
     for (let i = 0; i < cssRules.length; i++) {
@@ -78,14 +91,26 @@ export function CSS(text: string) {
     };
 }
 
-export function Template(html: string, css?: string) {
+export interface TypedString {
+    value: string;
+    type: string;
+}
+
+export function Template(html: string | TypedString, css?: string) {
     return function <T extends ReactiveTemplateMixin>(target: T) {
-        HTML(html)(target);
+        if (typeof html === 'string') {
+            HTML(html)(target);
+        } else if (html.type === 'application/xhtml+xml') {
+            XHTML(html.value)(target);
+        } else {
+            HTML(html.value)(target);
+        }
         if (css) {
             CSS(css)(target);
         }
     };
 }
+
 
 // HTML no-op template formatter
 function _noop(strings: TemplateStringsArray, ...values: any[]): string {
@@ -101,5 +126,18 @@ function _noop(strings: TemplateStringsArray, ...values: any[]): string {
 
 export const html = _noop;
 export const css = _noop;
+export function xhtml(strings: TemplateStringsArray, ...values: any[]): TypedString {
+    let result = '';
+    for (let i = 0; i < strings.length; i++) {
+        result += strings[i];
+        if (i < values.length) {
+            result += values[i];
+        }
+    }
+    return {
+        value: result,
+        type: 'application/xhtml+xml'
+    };
+}
 
 
