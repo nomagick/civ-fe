@@ -170,6 +170,12 @@ export class CivComponent extends EventEmitter {
             return;
         }
 
+        for (const attr of Array.from(dom.documentElement.attributes)) {
+            if (attr.name.startsWith('xmlns')) {
+                dom.documentElement.removeAttributeNode(attr);
+            }
+        }
+
         const walker = dom.createTreeWalker(dom.documentElement, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, (elem) => {
             if (elem instanceof Text) {
                 if (elem.textContent?.includes('{{') && elem.textContent.includes('}}')) {
@@ -221,7 +227,7 @@ export class CivComponent extends EventEmitter {
                 if (!attr.value) {
                     continue;
                 };
-                const name = attr.localName;
+                const name = attr.name;
                 const expr = attr.value.trim();
 
                 const trait = attrToTrait(name, expr);

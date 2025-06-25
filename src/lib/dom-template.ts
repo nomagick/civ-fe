@@ -1,3 +1,4 @@
+import { nsCollection } from "../protocol";
 
 
 let serial = 1;
@@ -52,6 +53,16 @@ export function XHTML(text: string) {
             throw new TypeError("XHTML decorator is intended for classes themselves.");
         }
         identify(target);
+
+        const nsInjections = [
+            'xmlns="http://www.w3.org/1999/xhtml"',
+            ...nsCollection.map((ns) => `xmlns:${ns}="https://civkit.naiver.org/${ns}"`),
+        ];
+        const firstClose = text.indexOf('>');
+        if (firstClose === -1) {
+            throw new Error("Invalid XHTML template");
+        }
+        text = text.slice(0, firstClose) + ' ' + nsInjections.join(' ') + text.slice(firstClose);
 
         const doc = new DOMParser().parseFromString(text, 'application/xhtml+xml');
 

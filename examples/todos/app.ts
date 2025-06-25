@@ -1,4 +1,4 @@
-import { CivComponent, xhtml, Reactive, Template, getReactiveStorage, Foreign } from 'civ-fe';
+import { CivComponent, xhtml, Reactive, Template, getReactiveStorage, Foreign, css } from 'civ-fe';
 
 interface TodoItem {
     title: string;
@@ -11,27 +11,27 @@ const todoList = getReactiveStorage<TodoItem[]>('todoList', []);
     xhtml`
 <div>
     <h3>Simple Todos Example</h3>
-    <form @submit="addTodo">
+    <form on:submit="addTodo">
     <input
         placeholder="enter todo and click +"
         required=""
-        .value="title"
-        @input="title = $event.target.value"
+        prop:value="title"
+        on:input="title = $event.target.value"
     />
     <button>+</button>
     </form>
-    <div civ:for="todo of todoList">
+    <div render:for="todo of todoList">
         <input
         type="checkbox"
-        .checked="todo.done"
-        @change="todo.done = $event.target.checked"
+        prop:checked="todo.done"
+        on:change="todo.done = $event.target.checked"
         />
         <input
         type="text"
-        .value="todo.title"
-        @change="todo.title = $event.target.value"
+        prop:value="todo.title"
+        on:change="todo.title = $event.target.value"
         />
-        <button @click="dropTodo(todo)">
+        <button on:click="dropTodo(todo)">
         x
         </button>
     </div>

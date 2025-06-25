@@ -1,7 +1,8 @@
 import { extractForLoopTokens } from "./utils/lang";
 
 
-export const pseudoNamespacePrefix = 'civ:'
+export const primaryNs = 'civ';
+export const pseudoNamespacePrefix = `${primaryNs}:`
 export function parseMagicAttr(name: string) {
     if ((name.startsWith(':') && name[1] && name[1] !== ':')) {
         return name.slice(1)
@@ -10,6 +11,19 @@ export function parseMagicAttr(name: string) {
     const prefix = `${pseudoNamespacePrefix}bind:`;
     if ((name.startsWith(prefix))) {
         return name.slice(prefix.length)
+    }
+
+    const prefix2 = `${pseudoNamespacePrefix}attr:`;
+    if ((name.startsWith(prefix2))) {
+        return name.slice(prefix2.length)
+    }
+
+    if ((name.startsWith('bind:'))) {
+        return name.slice('bind:'.length)
+    }
+
+    if ((name.startsWith('attr:'))) {
+        return name.slice('attr:'.length)
     }
 
     return undefined;
@@ -22,6 +36,15 @@ export function parseMagicProp(name: string) {
     }
     if (name.startsWith('.') && name[1] && name[1] !== '.') {
         return name.slice(1);
+    }
+
+    const prefix = `${pseudoNamespacePrefix}prop:`;
+    if ((name.startsWith(prefix))) {
+        return name.slice(prefix.length)
+    }
+
+    if ((name.startsWith('prop:'))) {
+        return name.slice('prop:'.length)
     }
 
     return undefined;
@@ -38,6 +61,10 @@ export function parseMagicEventHandler(name: string) {
         return name.slice(prefix.length);
     }
 
+    if ((name.startsWith('document-on:'))) {
+        return name.slice('document-on:'.length)
+    }
+
     return undefined;
 }
 
@@ -46,8 +73,30 @@ export function parseMagicDocumentEventHandler(name: string) {
         return name.slice(2);
     }
 
+    const prefix = `${pseudoNamespacePrefix}document:on:`;
+
+    if (name.startsWith(prefix)) {
+        return name.slice(prefix.length);
+    }
+
+    if ((name.startsWith('document:on:'))) {
+        return name.slice('document:on:'.length)
+    }
+
     return undefined;
 }
+
+export const nsCollection = [
+    primaryNs,
+    'attr',
+    'prop',
+    'on',
+    'document-on',
+    'bind',
+    'ref',
+    'use',
+    'render',
+]
 
 export const significantFlagClass = '__civ_significant';
 export const subtreeTemplateFlagClass = '__civ_subtree_template';
@@ -72,25 +121,25 @@ export function isMagicRefAttr(name: string) {
     return false;
 }
 export function isMagicForAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}for` || name === 'v-for';
+    return name === `${pseudoNamespacePrefix}for` || name === `render:for` || name === 'v-for';
 }
 export function isMagicIfAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}if` || name === 'v-if';
+    return name === `${pseudoNamespacePrefix}if` || name === `render:if` || name === 'v-if';
 }
 export function isMagicElifAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}elif` || name === 'v-else-if';
+    return name === `${pseudoNamespacePrefix}elif` || name === `render:elif` || name === 'v-else-if';
 }
 export function isMagicElseAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}else` || name === 'v-else';
+    return name === `${pseudoNamespacePrefix}else` || name === `render:else` || name === 'v-else';
 }
 export function isMagicHTMLAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}html` || name === 'v-html';
+    return name === `${pseudoNamespacePrefix}html` || name === `render:html` || name === 'v-html';
 }
 export function isMagicBindAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}bind` || name === 'v-bind';
+    return name === `${pseudoNamespacePrefix}bind` || name === `render:text` || name === 'v-bind';
 }
 export function isMagicPlainAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}plain` || name === 'v-pre';
+    return name === `${pseudoNamespacePrefix}plain` || name === `render:plain` || name === 'v-pre';
 }
 
 export const eventArgName = '$event';
