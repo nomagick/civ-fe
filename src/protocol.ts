@@ -61,8 +61,8 @@ export function parseMagicEventHandler(name: string) {
         return name.slice(prefix.length);
     }
 
-    if ((name.startsWith('document-on:'))) {
-        return name.slice('document-on:'.length)
+    if ((name.startsWith('on:'))) {
+        return name.slice('on:'.length)
     }
 
     return undefined;
@@ -73,14 +73,14 @@ export function parseMagicDocumentEventHandler(name: string) {
         return name.slice(2);
     }
 
-    const prefix = `${pseudoNamespacePrefix}document:on:`;
+    const prefix = `${pseudoNamespacePrefix}document-on:`;
 
     if (name.startsWith(prefix)) {
         return name.slice(prefix.length);
     }
 
-    if ((name.startsWith('document:on:'))) {
-        return name.slice('document:on:'.length)
+    if ((name.startsWith('document-on:'))) {
+        return name.slice('document-on:'.length)
     }
 
     return undefined;

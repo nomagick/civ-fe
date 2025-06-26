@@ -21,7 +21,7 @@ function fetchUserName(name: string) {
       required
       $ref="setupInputValidation($element, userNameExists)"
     />
-    <span civ:if="errors.email" class="error-message" .innerText="errors.email">{errors.email}</span>
+    <span civ:if="errors.email" class="error-message" civ:bind="errors.email"></span>
   </div>
   <div class="field-block">
     <input
@@ -33,7 +33,7 @@ function fetchUserName(name: string) {
       @input="fields.password = $event.target.value"
       $ref="setupInputValidation"
     />
-    <span civ:if="errors.password" class="error-message" .innerText="errors.password"></span>
+    <span civ:if="errors.password" class="error-message" civ:bind="errors.password"></span>
   </div>
   <div class="field-block">
     <input
@@ -43,7 +43,7 @@ function fetchUserName(name: string) {
       required
       $ref="setupInputValidation($element, matchesPassword)"
     />
-    <span civ:if="errors.confirmpassword" class="error-message" .innerText="errors.confirmpassword"></span>
+    <span civ:if="errors.confirmpassword" class="error-message" civ:bind="errors.confirmpassword"></span>
   </div>
   <button type="submit">Submit</button>
 </form>`, css`
@@ -93,16 +93,20 @@ export class Forms extends CivComponent {
             if (field && name !== field) {
                 continue;
             }
+            elem.setCustomValidity('');
             const value = elem.value.trim();
-            let txt;
-            for (const validator of validators) {
-                try {
-                    if (!await validator(value)) {
-                        txt = `Invalid value for ${name}`;
+
+            let txt = elem.checkValidity() ? '' : elem.validationMessage;
+            if (!txt) {
+                for (const validator of validators) {
+                    try {
+                        if (!await validator.call(this, value)) {
+                            txt = `Invalid value for ${name}`;
+                        }
+                    } catch (err: any) {
+                        txt = err.message;
+                        break;
                     }
-                } catch (err: any) {
-                    txt = err.message;
-                    break;
                 }
             }
             if (txt) {
@@ -117,7 +121,7 @@ export class Forms extends CivComponent {
 
     setupFormValidation(el: HTMLFormElement, cb?: Function) {
         el.setAttribute('novalidate', '');
-        el.onsubmit = async(ev) => {
+        el.onsubmit = async (ev) => {
             ev.preventDefault();
 
             if (!await this.validate()) {
@@ -127,7 +131,7 @@ export class Forms extends CivComponent {
             cb?.();
         }
     }
-    setupInputValidation(el: HTMLInputElement, ...validators: ((value: string) => boolean|Promise<boolean>)[]) {
+    setupInputValidation(el: HTMLInputElement, ...validators: ((value: string) => boolean | Promise<boolean>)[]) {
         this.props[el.name] = {
             elem: el,
             validators
@@ -139,7 +143,7 @@ export class Forms extends CivComponent {
             delete this.errors[el.name];
             el.classList.remove('error-input');
         }
-        el.onblur = ()=> {
+        el.onblur = () => {
             this.validate(el.name);
         }
     }

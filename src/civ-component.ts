@@ -15,6 +15,7 @@ import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EventEmitter } from "./lib/event-emitter";
 import { perNextTick } from "./lib/tick";
 import { unwrap } from "./lib/reactive-kit";
+import { CivFeError } from "./error";
 
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin { }
 export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
@@ -26,6 +27,12 @@ type ExprFn = (this: CivComponent, _ns: Record<string, unknown>) => unknown;
 type GenExprFn = (this: CivComponent, _ns: Record<string, unknown>) => Generator;
 
 const ANY_WRITE_OP_TRIGGER = '__civ_any_write_op_trigger__';
+
+const stringProps = new Set([
+    'textContent', 'innerHTML', 'innerText', 'value', 'placeholder', 'title', 'aria-label',
+    'spellcheck', 'autocapitalize', 'autocomplete', 'autocorrect',
+    'lang', 'dir', 'id', 'style',
+]);
 
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
@@ -142,7 +149,7 @@ export class CivComponent extends EventEmitter {
     [Symbol.dispose]() {
         this.cleanup();
     }
-    [Symbol.asyncDispose]() {
+    async [Symbol.asyncDispose]() {
         this[Symbol.dispose]();
     }
 
@@ -207,7 +214,14 @@ export class CivComponent extends EventEmitter {
                     continue;
                 }
 
-                const exprFn = new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}].join(''); } }`) as ExprFn;
+                const exprFn = new Function(namespaceInjectionArgName,
+                    `with(this) { 
+                        with(${namespaceInjectionArgName}) { 
+                            return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}]
+                                .map((x)=> (x===undefined || x===null) ? '' : x)
+                                .join(''); 
+                            }
+                        }`) as ExprFn;
                 expressionMap.set(tpl, exprFn);
                 const parentTraits = elemTraitsMap.get(elem.parentElement!) || [];
                 parentTraits.push(['tpl']);
@@ -520,7 +534,7 @@ export class CivComponent extends EventEmitter {
                         this._trackTask({
                             type: DomMaintenanceTaskType.PROP_SYNC,
                             tgt: el,
-                            prop: 'innerText',
+                            prop: 'textContent',
                             expr,
                             ns,
                         }, elem);
@@ -766,7 +780,7 @@ export class CivComponent extends EventEmitter {
         this._setConstruction(task, {
             type: DomConstructionTaskType.SET_ATTR,
             sub: task.attr,
-            val: value,
+            val: (value === undefined || value === null) ? '' : value,
         });
         this._setupTaskRecurrence(task, vecs);
     }
@@ -774,11 +788,16 @@ export class CivComponent extends EventEmitter {
     protected _handlePropSyncTask(task: PropSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
         if (task.tgt instanceof Node) {
+            let normalizedValue = value;
+            if (stringProps.has(task.prop) && (normalizedValue === undefined || normalizedValue === null)) {
+                normalizedValue = '';
+            }
+
             this._setConstruction(task, {
                 type: DomConstructionTaskType.SET_PROP,
                 sub: task.tgt,
                 prop: task.prop,
-                val: value,
+                val: normalizedValue,
             });
         } else {
             Reflect.set(task.tgt, task.prop, value);
@@ -903,7 +922,7 @@ export class CivComponent extends EventEmitter {
                         }
                     }
                 } catch (err) {
-                    this.emit('error', err, task);
+                    this.emit('error', CivFeError.from(err, task), task);
                 }
             }
         }
@@ -1024,7 +1043,7 @@ export class CivComponent extends EventEmitter {
                     }
                 }
             } catch (err) {
-                this.emit('error', err, con);
+                this.emit('error', CivFeError.from(err, con), con);
             }
         }
         this._pendingConstructions.clear();

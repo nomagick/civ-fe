@@ -20,8 +20,24 @@ export function getReactiveStorage<T extends object = Record<string, any>>(
         }
     );
 
+    const proxy = kit.proxy;
+
+    window.addEventListener('storage', (event) => {
+        if (event.storageArea !== storage) return;
+        if (event.key === storageKey) {
+            const newValue = event.newValue ? JSON.parse(event.newValue) : defaultValue;
+            for (const k in kit.target) {
+                if (!(k in newValue)) {
+                    delete proxy[k];
+                }
+            }
+            Object.assign(proxy, newValue);
+
+        }
+    });
+
     kit.on('change', handler);
     kit.on('array-op', handler);
 
-    return kit.proxy;
+    return proxy;
 }

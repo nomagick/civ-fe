@@ -8,13 +8,11 @@ export class HelloWorld extends CivComponent {
 
     interval?: ReturnType<typeof setInterval>;
 
-    override connectedCallback(): void {
-        super.connectedCallback();
+    connectedCallback() {
         this.interval = setInterval(() => this.message = this.message.endsWith('!') ? this.message.slice(0, -1) : this.message + '!', 1000);
     }
 
-    override disconnectedCallback(): void {
-        super.disconnectedCallback();
+    disconnectedCallback(): void {
         if (this.interval) {
             clearInterval(this.interval);
             delete this.interval;
