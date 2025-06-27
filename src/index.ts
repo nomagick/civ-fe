@@ -11,5 +11,7 @@ export * from "./lib/scss";
 export * from "./lib/trie";
 export * from "./lib/tick";
 export * from "./lib/once";
+export * from "./lib/transition";
+export * from "./lib/transition-group";
 
 export default CivComponent;
