@@ -2,8 +2,8 @@ import { runOncePerClass } from "./lib/once";
 import { REACTIVE_TEMPLATE_DOM, REACTIVE_TEMPLATE_SHEET, ReactiveTemplateMixin, identify } from "./lib/dom-template";
 import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./lib/reactive";
 import {
-    attachEventName,
-    attrToTrait, componentFlagClass, detachEventName, isMagicForAttr, isMagicForTemplateElement,
+    attachedEventName, detachEventName, moveEventName, movedEventName,
+    attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
     namespaceInjectionArgName, significantFlagClass, subtreeTemplateFlagClass,
     Traits
 } from "./protocol";
@@ -33,6 +33,9 @@ const stringProps = new Set([
     'spellcheck', 'autocapitalize', 'autocomplete', 'autocorrect',
     'lang', 'dir', 'id', 'style',
 ]);
+
+const moveFunc: <T extends Node>(this: T, node: Node, anchor: Node | null) => T =
+    'moveBefore' in Element.prototype ? Element.prototype.moveBefore : Element.prototype.insertBefore as any;
 
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
@@ -365,7 +368,7 @@ export class CivComponent extends EventEmitter {
             const end = document.createComment(`=== End ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
             el.before(start);
             el.after(end);
-            const parent = el.parentNode!;
+            const parent = el.parentElement!;
             el.remove();
             el.classList.remove(subtreeTemplateFlagClass);
 
@@ -980,6 +983,8 @@ export class CivComponent extends EventEmitter {
 
                         let anchorNode: Node | null = start.nextSibling;
 
+                        const insertionActionPoints: [Node, Node | null, boolean][] = [];
+
                         for (const x of con.seq) {
                             if (x.parentElement && x.parentElement !== parent) {
                                 // Element exists but moved to another place
@@ -989,11 +994,23 @@ export class CivComponent extends EventEmitter {
                                 anchorNode = x.nextSibling;
                                 continue;
                             }
-                            const isNew = !x.isConnected;
-                            parent.insertBefore(x, anchorNode);
-                            if (isNew) {
-                                attachRoutine.call(this, x);
+                            const isMove = x.isConnected;
+                            insertionActionPoints.push([x, anchorNode, isMove]);
+                            if (isMove) {
+                                moveRoutine.call(this, x);
                             }
+                        }
+
+                        for (const [node, anchor, isMove] of insertionActionPoints) {
+                            if (isMove) {
+                                if (node instanceof Element) {
+                                    moveFunc.call(parent, node, anchor);
+                                    continue;
+                                }
+                                parent.insertBefore(node, anchor);
+                                continue;
+                            }
+                            parent.insertBefore(node, anchor);
                         }
 
                         if (anchorNode !== end) {
@@ -1014,6 +1031,14 @@ export class CivComponent extends EventEmitter {
                                     thisNode.parentElement?.removeChild(thisNode);
                                 }
                             }
+                        }
+
+                        for (const [node, _anchor, isMove] of insertionActionPoints) {
+                            if (isMove) {
+                                movedRoutine.call(this, node);
+                                continue;
+                            }
+                            attachRoutine.call(this, node);
                         }
 
                         break;
@@ -1109,7 +1134,7 @@ export class CivComponent extends EventEmitter {
 
 function attachRoutine(this: CivComponent, sub: Node) {
     if (sub.isConnected) {
-        const event = new CustomEvent(attachEventName, {
+        const event = new CustomEvent(attachedEventName, {
             detail: { component: this }
         });
         sub.dispatchEvent(event);
@@ -1129,6 +1154,35 @@ function attachRoutine(this: CivComponent, sub: Node) {
     }
 }
 
+function moveRoutine(this: CivComponent, sub: Node) {
+    if (sub.isConnected) {
+        const event = new CustomEvent(moveEventName, {
+            detail: { component: this }
+        });
+        sub.dispatchEvent(event);
+    }
+}
+function movedRoutine(this: CivComponent, sub: Node) {
+    if (sub.isConnected) {
+        const event = new CustomEvent(movedEventName, {
+            detail: { component: this }
+        });
+        sub.dispatchEvent(event);
+        if (sub instanceof Element) {
+            const hdl = (el: Element) => {
+                const comp = elementToComponentMap.get(el);
+                if (!comp) {
+                    return;
+                }
+                if ('connectedMoveCallback' in comp && typeof comp.connectedMoveCallback === 'function') {
+                    Reflect.apply(comp.connectedMoveCallback, comp, []);
+                }
+            };
+            hdl(sub);
+            // sub.querySelectorAll(`.${componentFlagClass}`).forEach(hdl);
+        }
+    }
+}
 function detachRoutine(this: CivComponent, sub: Node, dispose?: boolean) {
     const event = new CustomEvent(detachEventName, {
         detail: { component: this },

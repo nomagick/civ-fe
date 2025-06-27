@@ -198,5 +198,7 @@ export function isMagicForTemplateElement(elem: Element) {
     return elem.hasAttribute(`${pseudoNamespacePrefix}for`) || elem.hasAttribute('v-for');
 }
 
-export const attachEventName = `${pseudoNamespacePrefix}attach`;
+export const attachedEventName = `${pseudoNamespacePrefix}attached`;
 export const detachEventName = `${pseudoNamespacePrefix}detach`;
+export const moveEventName = `${pseudoNamespacePrefix}move`;
+export const movedEventName = `${pseudoNamespacePrefix}moved`;

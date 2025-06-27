@@ -17,20 +17,32 @@ export class CivFeError extends Error {
             if (error instanceof Error) {
                 const instance = new CivFeError(`[DOM ${typ}: ${task.type}] ${error.message}`, { cause: error });
                 instance.task = task;
-
+                if ('captureStackTrace' in Error) {
+                    // @ts-ignore
+                    Error.captureStackTrace(instance, this.from);
+                }
                 return instance;
             }
             const instance = new CivFeError(`[DOM ${typ}: ${task.type}] ${error}`, { cause: error });
             instance.task = task;
+            // @ts-ignore
+            Error.captureStackTrace(instance, this.from);
 
             return instance;
         }
 
         if (error instanceof Error) {
-            return new CivFeError(error.message, { cause: error });
+            const instance = new CivFeError(error.message, { cause: error });
+            // @ts-ignore
+            Error.captureStackTrace(instance, this.from);
+            return instance;
         }
 
-        return new CivFeError(String(error));
+        const instance = new CivFeError(String(error));
+
+        // @ts-ignore
+        Error.captureStackTrace(instance, this.from);
+        return instance;
     }
 
 }

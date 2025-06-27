@@ -45,7 +45,7 @@ export interface EventBridgeTask {
 export interface SubtreeRenderTask {
     type: DomMaintenanceTaskType.SUBTREE_RENDER;
     tpl: Element;
-    anchor: [Node, Node, Node];
+    anchor: [Element, Node, Node];
     expr: string;
     injectNs: string[];
     ns?: Record<string, unknown>;
@@ -122,7 +122,7 @@ export interface NodeReplaceTask {
 }
 export interface NodeSequenceMangleTask {
     type: DomConstructionTaskType.SEQUENCE_MANGLE;
-    anchor: [Node, Node, Node];
+    anchor: [Element, Node, Node];
     seq: Node[];
 }
 export interface NodeGroupToggleTask {
