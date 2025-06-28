@@ -1,5 +1,5 @@
 
-import { moveEventName, movedEventName } from "../protocol";
+import { attachedEventName, moveEventName, movedEventName } from "../protocol";
 import { TransitionConfig, createTransition } from "./transition";
 
 /**
@@ -15,32 +15,30 @@ export function createTransitionGroup(container: HTMLElement, config: Transition
     const { signal } = config;
     const childPositions = new WeakMap<HTMLElement, DOMRect>();
 
-    // --- Handle Enter and Leave --- 
-    // We can simply apply the standard createTransition to all direct children.
-    // The framework's events will bubble, so we listen on the container.
-    container.addEventListener('civ:attached', (e) => {
+    container.addEventListener(attachedEventName, (e) => {
         if (e.target instanceof HTMLElement && e.target.parentElement === container) {
             createTransition(e.target, config);
         }
-    }, { signal });
+    }, { signal, capture: true });
 
     // --- Handle Move (FLIP) --- 
     // 1. FIRST: Listen for the 'move' event to capture starting positions.
     container.addEventListener(moveEventName, (e) => {
-        if (e.target instanceof HTMLElement && e.target.parentElement === container) {
-            childPositions.set(e.target, e.target.getBoundingClientRect());
+        const { target } = e;
+        if (target instanceof HTMLElement && target.parentElement === container) {
+            childPositions.set(target, target.getBoundingClientRect());
         }
     }, { signal });
 
     // 2. LAST, INVERT, PLAY: Listen for the 'moved' event.
     container.addEventListener(movedEventName, (e) => {
-        const child = e.target as HTMLElement;
-        if (!childPositions.has(child)) return;
+        const elem = e.target as HTMLElement;
+        if (!childPositions.has(elem)) return;
 
         // LAST: Get the new position.
-        const newRect = child.getBoundingClientRect();
-        const oldRect = childPositions.get(child)!;
-        childPositions.delete(child);
+        const newRect = elem.getBoundingClientRect();
+        const oldRect = childPositions.get(elem)!;
+        childPositions.delete(elem);
 
         // INVERT: Calculate the delta and apply the inverted transform.
         const deltaX = oldRect.left - newRect.left;
@@ -49,20 +47,21 @@ export function createTransitionGroup(container: HTMLElement, config: Transition
         const scaleY = oldRect.height / newRect.height;
 
         if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return; // Skip if it didn't move
-        const backupTransform = child.style.transform;
-        const backupTransition = child.style.transition;
-        child.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
+        const backupTransform = elem.style.transform;
+        const backupTransition = elem.style.transition;
+        elem.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
+        const { transition = 'all', duration, easing } = config;
+        const transitionValue = `${transition} ${duration}ms${easing ? ` ${easing}` : ''}`;
 
         // PLAY: In the next frame, add the transition and remove the transform.
         requestAnimationFrame(() => {
-            const { duration, easing } = config;
-            child.style.transition = `transform ${duration}ms${easing ? ` ${easing}` : ''}`;
-            child.style.transform = backupTransform;
+            elem.style.transition = backupTransition ? `${backupTransition}, ${transitionValue}` : transitionValue;
+            elem.style.transform = backupTransform;
         });
 
         // Cleanup the inline transition style after it finishes.
-        child.addEventListener('transitionend', () => {
-            child.style.transition = backupTransition;
+        elem.addEventListener('transitionend', () => {
+            elem.style.transition = backupTransition;
         }, { once: true });
 
     }, { signal });

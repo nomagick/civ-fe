@@ -3,6 +3,7 @@ import { attachedEventName, detachEventName } from "../protocol";
 
 export interface TransitionConfig {
     duration: number; // Transition duration in milliseconds
+    transition?: string; // Optional CSS transition property, e.g., 'all'
     easing?: string;   // CSS easing function, e.g., 'ease-out'
     from: Partial<CSSStyleDeclaration>; // Initial styles
     to: Partial<CSSStyleDeclaration>;   // Final styles for enter transition
@@ -11,8 +12,8 @@ export interface TransitionConfig {
 }
 
 export function createTransition(element: HTMLElement, config: TransitionConfig) {
-    const { duration, easing, from, to, leaveTo = from, signal } = config;
-    const transitionValue = `all ${duration}ms${easing ? ` ${easing}` : ''}`;
+    const { transition = 'all', duration, easing, from, to, leaveTo = from, signal } = config;
+    const transitionValue = `${transition} ${duration}ms${easing ? ` ${easing}` : ''}`;
 
     const onAttach = () => {
         const backup: Partial<CSSStyleDeclaration> = {
@@ -27,7 +28,7 @@ export function createTransition(element: HTMLElement, config: TransitionConfig)
         Object.assign(element.style, from);
 
         requestAnimationFrame(() => {
-            element.style.transition = transitionValue;
+            element.style.transition = backup.transition ? `${backup.transition}, ${transitionValue}` : transitionValue;
             Object.assign(element.style, to);
         });
 
@@ -51,7 +52,7 @@ export function createTransition(element: HTMLElement, config: TransitionConfig)
 
         Object.assign(element.style, to);
         requestAnimationFrame(() => {
-            element.style.transition = transitionValue;
+            element.style.transition = backup.transition ? `${backup.transition}, ${transitionValue}` : transitionValue;
             Object.assign(element.style, leaveTo);
         });
 
