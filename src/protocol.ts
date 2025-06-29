@@ -120,6 +120,9 @@ export function isMagicRefAttr(name: string) {
 
     return false;
 }
+export function isMagicModel(name: string) {
+    return name === `${pseudoNamespacePrefix}model` || name === 'v-model';
+}
 export function isMagicForAttr(name: string) {
     return name === `${pseudoNamespacePrefix}for` || name === `render:for` || name === 'v-for';
 }
@@ -144,9 +147,8 @@ export function isMagicPlainAttr(name: string) {
 
 export const eventArgName = '$event';
 export const elementArgName = '$element';
-export const namespaceInjectionArgName = '_ns';
 
-export type Trait = 'tpl' | 'component' | 'attr' | 'prop' | 'event' | 'ref' | 'documentEvent' | 'for' | 'if' | 'elif' | 'else' | 'html' | 'bind' | 'plain';
+export type Trait = 'tpl' | 'component' | 'attr' | 'prop' | 'model' | 'event' | 'ref' | 'documentEvent' | 'for' | 'if' | 'elif' | 'else' | 'html' | 'bind' | 'plain';
 export type Traits = [Trait, ...string[]][];
 
 export function attrToTrait(attrName: string, expr: string): Traits[number] | undefined {
@@ -165,6 +167,9 @@ export function attrToTrait(attrName: string, expr: string): Traits[number] | un
     const parsedEvent = parseMagicEventHandler(attrName);
     if (parsedEvent) {
         return ['event', parsedEvent, expr] as const;
+    }
+    if (isMagicModel(attrName)) {
+        return ['model', expr] as const;
     }
     if (isMagicRefAttr(attrName)) {
         return ['ref', expr] as const;

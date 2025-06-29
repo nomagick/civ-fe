@@ -4,6 +4,7 @@ import type { CivComponent } from "civ-component";
 export enum DomMaintenanceTaskType {
     ATTR_SYNC = 'attrSync',
     PROP_SYNC = 'propSync',
+    MODEL_SYNC = 'modelSync',
     TPL_SYNC = 'tplSync',
     EVENT_BRIDGE = 'eventBridge',
     SUBTREE_TOGGLE = 'subtreeToggle',
@@ -23,6 +24,13 @@ export interface PropSyncTask {
     type: DomMaintenanceTaskType.PROP_SYNC;
     tgt: CivComponent | Element;
     prop: string;
+    expr: string;
+    ns?: Record<string, unknown>;
+}
+
+export interface ModelSyncTask {
+    type: DomMaintenanceTaskType.MODEL_SYNC;
+    tgt: Element;
     expr: string;
     ns?: Record<string, unknown>;
 }
@@ -78,6 +86,7 @@ export type DomMaintenanceTask =
     | ComponentRenderTask
     | AttrSyncTask
     | PropSyncTask
+    | ModelSyncTask
     | TplSyncTask
     | SubtreeToggleTask
     | EventBridgeTask
@@ -104,6 +113,7 @@ export interface SetPropTask {
     sub: Node;
     prop: string;
     val: any;
+    fn?: (tsk: SetPropTask) => void;
 }
 export interface NodeAttachTask {
     type: DomConstructionTaskType.ATTACH;

@@ -4,12 +4,17 @@ import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from
 import {
     attachedEventName, detachEventName, moveEventName, movedEventName,
     attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
-    namespaceInjectionArgName, significantFlagClass, subtreeTemplateFlagClass,
-    Traits
+    significantFlagClass, subtreeTemplateFlagClass,
+    Traits,
 } from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
 import { parseTemplate } from "./utils/template-parser";
-import { AttrSyncTask, ComponentRenderTask, DomConstructionTask, DomConstructionTaskType, DomMaintenanceTask, DomMaintenanceTaskType, ElementReferenceTask, EventBridgeTask, NodeReplaceTask, PropSyncTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask } from "./dom";
+import {
+    AttrSyncTask, ComponentRenderTask, DomConstructionTask, DomConstructionTaskType,
+    DomMaintenanceTask, DomMaintenanceTaskType, ElementReferenceTask, EventBridgeTask,
+    ModelSyncTask,
+    NodeReplaceTask, PropSyncTask, SetPropTask, SubtreeRenderTask, SubtreeToggleTask, TplSyncTask
+} from "./dom";
 import { TrieNode } from "./lib/trie";
 import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EventEmitter } from "./lib/event-emitter";
@@ -23,7 +28,7 @@ export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap
 const forExpRegex = /^(?<expr1>.+?)\s+(?<typ>in|of)\s+(?<expr2>.+)$/;
 let serial = 1;
 
-type ExprFn = (this: CivComponent, _ns: Record<string, unknown>) => unknown;
+type ExprFn = (this: CivComponent, _ns: Record<string, unknown>, assignment?: unknown) => unknown;
 type GenExprFn = (this: CivComponent, _ns: Record<string, unknown>) => Generator;
 
 const ANY_WRITE_OP_TRIGGER = '__civ_any_write_op_trigger__';
@@ -36,6 +41,8 @@ const stringProps = new Set([
 
 const moveFunc: <T extends Node>(this: T, node: Node, anchor: Node | null) => T =
     'moveBefore' in Element.prototype ? Element.prototype.moveBefore : Element.prototype.insertBefore as any;
+
+const listenerAddedForTask = new WeakSet<DomMaintenanceTask>();
 
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
@@ -217,9 +224,9 @@ export class CivComponent extends EventEmitter {
                     continue;
                 }
 
-                const exprFn = new Function(namespaceInjectionArgName,
+                const exprFn = new Function(
                     `with(this) { 
-                        with(${namespaceInjectionArgName}) { 
+                        with(arguments[0]) { 
                             return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}]
                                 .map((x)=> (x===undefined || x===null) ? '' : x)
                                 .join(''); 
@@ -266,14 +273,16 @@ export class CivComponent extends EventEmitter {
                     }
                     elem.classList.add(subtreeTemplateFlagClass);
                     const { expr1, typ, expr2 } = matched.groups!;
-                    const genFn = new GeneratorFunction(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { const __iterable_ = ${expr2}; yield __iterable_; for (${expr1} ${typ} __iterable_) { yield ${namespaceInjectionArgName}; } } }`) as unknown as GenExprFn;
+                    const genFn = new GeneratorFunction(`with(this) { with(arguments[0]) { const __iterable_ = ${expr2}; yield __iterable_; for (${expr1} ${typ} __iterable_) { yield arguments[0]; } } }`) as unknown as GenExprFn;
                     Object.defineProperty(genFn, 'name', {
                         value: `*${genFn.name}`,
                         configurable: true
                     });
                     expressionMap.set(expr, genFn);
                 } else {
-                    expressionMap.set(expr, new Function(namespaceInjectionArgName, `with(this) { with(${namespaceInjectionArgName}) { return ${expr}; } }`) as ExprFn);
+                    expressionMap.set(expr, new Function(
+                        `with(this) { with(arguments[0]) { if (arguments.length >= 2) {${expr} = arguments[1];} return ${expr}; } }`
+                    ) as ExprFn);
                 }
             }
             for (const attr of magicAttrs) {
@@ -450,6 +459,16 @@ export class CivComponent extends EventEmitter {
                         }, elem);
                         break;
                     }
+                    case 'model': {
+                        const [expr] = args;
+                        this._trackTask({
+                            type: DomMaintenanceTaskType.MODEL_SYNC,
+                            tgt: el,
+                            expr,
+                            ns,
+                        }, elem);
+                        break;
+                    }
                     case 'event': {
                         const [eventName, expr] = args;
                         this._trackTask({
@@ -592,7 +611,7 @@ export class CivComponent extends EventEmitter {
         elem.querySelectorAll(`.${significantFlagClass}`).forEach(handler);
     }
 
-    protected _evaluateExpr(expr: string, ns: Record<string, unknown> = Object.create(null), noListen?: unknown) {
+    protected _evaluateExpr(expr: string, ns: Record<string, unknown> = Object.create(null), noListen?: unknown, assignment?: unknown) {
         const fn = this._expressionMap.get(expr);
         if (!fn) {
             throw new Error(`Cannot find eval function for expression: ${expr}`);
@@ -603,6 +622,9 @@ export class CivComponent extends EventEmitter {
         }
 
         if (noListen) {
+            if (arguments.length >= 3) {
+                return { value: fn.call(this, ns, assignment), vecs: [] };
+            }
             return { value: fn.call(this, ns), vecs: [] };
         }
 
@@ -612,7 +634,7 @@ export class CivComponent extends EventEmitter {
             vecs.push([tgt, prop]);
         };
         this[REACTIVE_KIT].on('access', hdl);
-        const r = fn.call(this, ns);
+        const r = arguments.length >= 3 ? fn.call(this, ns, assignment) : fn.call(this, ns);
         this[REACTIVE_KIT].off('access', hdl);
 
         return { value: r, vecs };
@@ -791,22 +813,209 @@ export class CivComponent extends EventEmitter {
     protected _handlePropSyncTask(task: PropSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
         if (task.tgt instanceof Node) {
-            let normalizedValue = value;
-            if (stringProps.has(task.prop) && (normalizedValue === undefined || normalizedValue === null)) {
-                normalizedValue = '';
-            }
+            const curVal = Reflect.get(task.tgt, task.prop);
+            if (curVal instanceof DOMTokenList) {
+                this._setConstruction(task, {
+                    type: DomConstructionTaskType.SET_PROP,
+                    sub: task.tgt,
+                    prop: task.prop,
+                    val: value,
+                    fn: DOMTokenListSync,
+                });
+            } else {
+                let normalizedValue = value;
 
-            this._setConstruction(task, {
-                type: DomConstructionTaskType.SET_PROP,
-                sub: task.tgt,
-                prop: task.prop,
-                val: normalizedValue,
-            });
+                if (stringProps.has(task.prop) && (normalizedValue === undefined || normalizedValue === null)) {
+                    normalizedValue = '';
+                }
+                this._setConstruction(task, {
+                    type: DomConstructionTaskType.SET_PROP,
+                    sub: task.tgt,
+                    prop: task.prop,
+                    val: normalizedValue,
+                });
+            }
         } else {
             Reflect.set(task.tgt, task.prop, value);
         }
         this._setupTaskRecurrence(task, vecs);
     }
+
+    protected _handleModelSyncTask(task: ModelSyncTask) {
+        const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
+        const el = task.tgt;
+
+        let recur = true;
+
+        if (el instanceof HTMLInputElement) {
+            switch (el.type) {
+                case 'checkbox': {
+                    if (!listenerAddedForTask.has(task)) {
+                        el.addEventListener('change', (e: Event) => {
+                            const target = e.target as HTMLInputElement;
+                            if (target.value === 'on') {
+                                this._evaluateExpr(task.expr, task.ns, true, target.checked);
+                            } else {
+                                const { value } = this._evaluateExpr(task.expr, task.ns, true);
+                                if (Array.isArray(value)) {
+                                    if (target.checked && !value.includes(target.value)) {
+                                        value.push(target.value);
+                                    } else if (!target.checked && value.includes(target.value)) {
+                                        const index = value.indexOf(target.value);
+                                        if (index !== -1) {
+                                            value.splice(index, 1);
+                                        }
+                                    }
+                                } else {
+                                    this._evaluateExpr(task.expr, task.ns, true, target.checked ? [target.value] : []);
+                                }
+                            }
+                        });
+                        listenerAddedForTask.add(task);
+                    }
+                    this._setConstruction(task, {
+                        type: DomConstructionTaskType.SET_PROP,
+                        sub: el,
+                        prop: 'checked',
+                        val: Boolean(value),
+                    });
+                    break;
+                }
+                case 'radio': {
+                    if (!listenerAddedForTask.has(task)) {
+                        el.addEventListener('change', (e: Event) => {
+                            const target = e.target as HTMLInputElement;
+                            const { value } = this._evaluateExpr(task.expr, task.ns, true);
+                            if (Array.isArray(value)) {
+                                if (target.checked && !value.includes(target.value)) {
+                                    value.push(target.value);
+                                } else if (!target.checked && value.includes(target.value)) {
+                                    const index = value.indexOf(target.value);
+                                    if (index !== -1) {
+                                        value.splice(index, 1);
+                                    }
+                                }
+                            } else {
+                                this._evaluateExpr(task.expr, task.ns, true, target.checked ? [target.value] : []);
+                            }
+                        });
+                        listenerAddedForTask.add(task);
+                    }
+                    this._setConstruction(task, {
+                        type: DomConstructionTaskType.SET_PROP,
+                        sub: el,
+                        prop: 'checked',
+                        val: Boolean(value),
+                    });
+                    break;
+                }
+                case 'image': {
+                    recur = false;
+                    break;
+                }
+                case 'file': {
+                    if (!listenerAddedForTask.has(task)) {
+                        el.addEventListener('change', (e: Event) => {
+                            const target = e.target as HTMLInputElement;
+                            this._evaluateExpr(task.expr, task.ns, true, Array.from(target.files || []));
+                        });
+                        listenerAddedForTask.add(task);
+                    }
+                    recur = false;
+                    break;
+                }
+
+                case 'number': {
+                    if (!listenerAddedForTask.has(task)) {
+                        el.addEventListener('change', (e: Event) => {
+                            const target = e.target as HTMLInputElement;
+                            this._evaluateExpr(task.expr, task.ns, true, target.valueAsNumber);
+                        });
+                        listenerAddedForTask.add(task);
+                    }
+
+                    this._setConstruction(task, {
+                        type: DomConstructionTaskType.SET_PROP,
+                        sub: el,
+                        prop: 'value',
+                        val: (value === undefined || value === null) ? '' : String(value),
+                    });
+                    break;
+                }
+
+                case 'week':
+                case 'month':
+                case 'datetime-local':
+                case 'datetime':
+                case 'date': {
+                    if (!listenerAddedForTask.has(task)) {
+                        el.addEventListener('change', (e: Event) => {
+                            const target = e.target as HTMLInputElement;
+                            this._evaluateExpr(task.expr, task.ns, true, target.valueAsDate);
+                        });
+                        listenerAddedForTask.add(task);
+                    }
+
+                    this._setConstruction(task, {
+                        type: DomConstructionTaskType.SET_PROP,
+                        sub: el,
+                        prop: 'value',
+                        val: (value === undefined || value === null) ? '' : String(value),
+                    });
+                    break;
+                }
+                default: {
+                    if (!listenerAddedForTask.has(task)) {
+                        const hdl = (e: Event) => {
+                            const target = e.target as HTMLInputElement;
+                            this._evaluateExpr(task.expr, task.ns, true, target.value);
+                        };
+                        el.addEventListener('change', hdl);
+                        el.addEventListener('input', hdl);
+                        listenerAddedForTask.add(task);
+                    }
+                    this._setConstruction(task, {
+                        type: DomConstructionTaskType.SET_PROP,
+                        sub: el,
+                        prop: 'value',
+                        val: (value === undefined || value === null) ? '' : String(value),
+                    });
+                    break;
+                }
+            }
+        } else if (el instanceof HTMLSelectElement) {
+            if (el.multiple) {
+                this._setConstruction(task, {
+                    type: DomConstructionTaskType.SET_PROP,
+                    sub: el,
+                    prop: 'options',
+                    val: value,
+                    fn: selectOptionsSync,
+                });
+            } else {
+                this._setConstruction(task, {
+                    type: DomConstructionTaskType.SET_PROP,
+                    sub: el,
+                    prop: 'value',
+                    val: (value === undefined || value === null) ? '' : String(value),
+                });
+            }
+        } else {
+            this._setConstruction(task, {
+                type: DomConstructionTaskType.SET_PROP,
+                sub: el,
+                prop: 'value',
+                val: (value === undefined || value === null) ? '' : String(value),
+            });
+        }
+
+        if (recur) {
+            this._setupTaskRecurrence(task, vecs);
+        } else {
+            this._untrackTask(task);
+        }
+    }
+
 
     protected _handleTplSyncTask(task: TplSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
@@ -944,6 +1153,10 @@ export class CivComponent extends EventEmitter {
                         break;
                     }
                     case DomConstructionTaskType.SET_PROP: {
+                        if (con.fn) {
+                            con.fn.call(this, con);
+                            break;
+                        }
                         Reflect.set(con.sub, con.prop, con.val);
                         break;
                     }
@@ -1218,6 +1431,65 @@ function detachRoutine(this: CivComponent, sub: Node, dispose?: boolean) {
     }
 
     return continueRemoving;
+}
+
+function DOMTokenListSync(task: SetPropTask) {
+    const { sub, prop, val } = task;
+    if (!(sub instanceof Element)) {
+        return;
+    }
+    const list = Reflect.get(sub, prop);
+    if (!(list instanceof DOMTokenList)) {
+        return;
+    }
+    if (typeof val === 'object' && val !== null) {
+        if (typeof val === 'object' && val !== null) {
+            for (const [k, v] of Object.entries(val)) {
+                if (v) {
+                    list.add(k);
+                } else {
+                    list.remove(k);
+                }
+            }
+            return;
+        }
+    }
+    if (Array.isArray(val)) {
+        list.value = val.join(' ');
+        return;
+    }
+    if (typeof val === 'string') {
+        list.value = val;
+        return;
+    }
+    list.value = '';
+}
+
+function selectOptionsSync(task: SetPropTask) {
+    const { sub, prop, val } = task;
+    if (!(sub instanceof HTMLSelectElement)) {
+        return;
+    }
+    const options = Reflect.get(sub, prop) as HTMLOptionsCollection;
+
+    const selectedValues = new Set<string>();
+    if (Array.isArray(val)) {
+        for (const v of val) {
+            selectedValues.add(String(v));
+        }
+    } else if (val === null || val === undefined) {
+        selectedValues.clear();
+    } else {
+        selectedValues.add(String(val));
+    }
+    for (let i = 0; i < options.length; i++) {
+        const option = options[i];
+        if (selectedValues.has(option.value)) {
+            option.selected = true;
+        } else {
+            option.selected = false;
+        }
+    }
 }
 
 
