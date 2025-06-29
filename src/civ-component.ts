@@ -1001,6 +1001,15 @@ export class CivComponent extends EventEmitter {
                 });
             }
         } else {
+            if (!listenerAddedForTask.has(task)) {
+                const hdl = (e: Event) => {
+                    const target = e.target as HTMLInputElement;
+                    this._evaluateExpr(task.expr, task.ns, true, target.value);
+                };
+                el.addEventListener('change', hdl);
+                el.addEventListener('input', hdl);
+                listenerAddedForTask.add(task);
+            }
             this._setConstruction(task, {
                 type: DomConstructionTaskType.SET_PROP,
                 sub: el,
