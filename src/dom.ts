@@ -1,4 +1,4 @@
-import { Traits } from "protocol";
+import type { EventHandlerTrait, Traits } from "./protocol";
 import type { CivComponent } from "civ-component";
 
 export enum DomMaintenanceTaskType {
@@ -47,6 +47,7 @@ export interface EventBridgeTask {
     tgt: EventTarget;
     event: string;
     expr: string;
+    evTraits?: EventHandlerTrait[];
     ns?: Record<string, unknown>;
 }
 

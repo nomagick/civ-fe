@@ -16,9 +16,10 @@ import { CivComponent, Reactive, Template, css, html } from 'civ-fe';
     <!-- Can also be an inline expression statement -->
     <button @click="message += '!'">Append "!"</button>
     <!--
-        We does NOT provide modifiers for e.preventDefault() or e.stopPropagation()
+        We also provides modifiers for common tasks
+        such as e.preventDefault() and e.stopPropagation(), but just for compatibility with Vue.js.
     -->
-    <a href="https://www.gov.cn" @click="notify">
+    <a href="https://www.gov.cn" @click.prevent="notify">
         A link with e.preventDefault()
     </a>
 </div>
@@ -38,11 +39,7 @@ export class HandlingInput extends CivComponent {
         this.message = this.message.split('').reverse().join('')
     }
 
-    notify(ev?: Event) {
-        if (ev) {
-            // This is required and intentionally exposed to developers.
-            ev.preventDefault();
-        }
+    notify() {
         alert('navigation was prevented.')
     }
 }

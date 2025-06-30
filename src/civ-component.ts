@@ -5,7 +5,7 @@ import {
     attachedEventName, detachEventName, moveEventName, movedEventName,
     attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
     significantFlagClass, subtreeTemplateFlagClass,
-    Traits,
+    Traits, EventHandlerTrait,
 } from "./protocol";
 import { GeneratorFunction } from "./utils/lang";
 import { parseTemplate } from "./utils/template-parser";
@@ -494,23 +494,25 @@ export class CivComponent extends EventEmitter {
                         break;
                     }
                     case 'event': {
-                        const [eventName, expr] = args;
+                        const [eventName, expr, ...evTraits] = args;
                         this._trackTask({
                             type: DomMaintenanceTaskType.EVENT_BRIDGE,
                             tgt: el,
                             event: eventName,
                             expr,
+                            evTraits: evTraits as EventHandlerTrait[],
                             ns,
                         }, elem);
                         break;
                     }
                     case 'documentEvent': {
-                        const [eventName, expr] = args;
+                        const [eventName, expr, ...evTraits] = args;
                         this._trackTask({
                             type: DomMaintenanceTaskType.EVENT_BRIDGE,
                             tgt: document,
                             event: eventName,
                             expr,
+                            evTraits: evTraits as EventHandlerTrait[],
                             ns,
                         }, elem);
                         break;
@@ -1151,14 +1153,44 @@ export class CivComponent extends EventEmitter {
     }
 
     protected _handleEventBridgeTask(task: EventBridgeTask) {
-        const [eventName, ...traits] = task.event.split('.');
-
+        const { event: eventName, evTraits: traits = [], tgt } = task;
+        let stopPropagation = false;
+        let preventDefault = false;
+        let targetSelf = false;
         const opts: Record<string, unknown> = {};
         for (const x of traits) {
-            opts[x] = true;
+            switch (x) {
+                case 'stop': {
+                    stopPropagation = true;
+                    break;
+                }
+                case 'prevent': {
+                    preventDefault = true;
+                    break;
+                }
+                case 'self': {
+                    targetSelf = true;
+                    break;
+                }
+                case 'capture':
+                case 'once':
+                case 'passive': {
+                    opts[x] = true;
+                    break;
+                }
+            }
         }
 
         task.tgt.addEventListener(eventName, (e: Event) => {
+            if (stopPropagation) {
+                e.stopPropagation();
+            }
+            if (preventDefault) {
+                e.preventDefault();
+            }
+            if (targetSelf && e.target !== tgt) {
+                return;
+            }
             const ns = Object.create(task.ns || null);
             ns.$event = e;
             const { value } = this._evaluateExpr(task.expr, ns, true);

@@ -144,6 +144,19 @@ export function isMagicBindAttr(name: string) {
 export function isMagicPlainAttr(name: string) {
     return name === `${pseudoNamespacePrefix}plain` || name === `render:plain` || name === 'v-pre';
 }
+export const eventHandlerTraits = ['stop', 'prevent', 'self', 'capture', 'once', 'passive'] as const;
+export type EventHandlerTrait = typeof eventHandlerTraits[number];
+export function parseEventHandler(input: string): [string, EventHandlerTrait[]] {
+    const [eventName, ...traits] = input.split('.');
+
+    for (const trait of traits) {
+        if (!eventHandlerTraits.includes(trait as EventHandlerTrait)) {
+            return [input, []];
+        }
+    }
+
+    return [eventName, traits as EventHandlerTrait[]];
+}
 
 export const eventArgName = '$event';
 export const elementArgName = '$element';
@@ -162,11 +175,13 @@ export function attrToTrait(attrName: string, expr: string): Traits[number] | un
     }
     const documentEvent = parseMagicDocumentEventHandler(attrName);
     if (documentEvent) {
-        return ['documentEvent', documentEvent, expr] as const;
+        const [eventName, traits] = parseEventHandler(documentEvent);
+        return ['documentEvent', eventName, expr, ...traits] as const;
     }
     const parsedEvent = parseMagicEventHandler(attrName);
     if (parsedEvent) {
-        return ['event', parsedEvent, expr] as const;
+        const [eventName, traits] = parseEventHandler(parsedEvent);
+        return ['event', eventName, expr, ...traits] as const;
     }
     if (isMagicModel(attrName)) {
         return ['model', expr] as const;
