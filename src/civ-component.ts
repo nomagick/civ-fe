@@ -622,7 +622,7 @@ export class CivComponent extends EventEmitter {
         }
 
         if (noListen) {
-            if (arguments.length >= 3) {
+            if (arguments.length >= 4) {
                 return { value: fn.call(this, ns, assignment), vecs: [] };
             }
             return { value: fn.call(this, ns), vecs: [] };
@@ -634,7 +634,7 @@ export class CivComponent extends EventEmitter {
             vecs.push([tgt, prop]);
         };
         this[REACTIVE_KIT].on('access', hdl);
-        const r = arguments.length >= 3 ? fn.call(this, ns, assignment) : fn.call(this, ns);
+        const r = arguments.length >= 4 ? fn.call(this, ns, assignment) : fn.call(this, ns);
         this[REACTIVE_KIT].off('access', hdl);
 
         return { value: r, vecs };
@@ -985,6 +985,19 @@ export class CivComponent extends EventEmitter {
             }
         } else if (el instanceof HTMLSelectElement) {
             if (el.multiple) {
+                if (!listenerAddedForTask.has(task)) {
+                    el.addEventListener('change', (e: Event) => {
+                        const target = e.target as HTMLSelectElement;
+                        const { value } = this._evaluateExpr(task.expr, task.ns, true);
+                        if (Array.isArray(value)) {
+                            value.length = 0;
+                            value.push(...Array.from(target.selectedOptions).map((x) => x.value));
+                        } else {
+                            this._evaluateExpr(task.expr, task.ns, true, Array.from(target.selectedOptions).map((x) => x.value));
+                        }
+                    });
+                    listenerAddedForTask.add(task);
+                }
                 this._setConstruction(task, {
                     type: DomConstructionTaskType.SET_PROP,
                     sub: el,
@@ -993,6 +1006,13 @@ export class CivComponent extends EventEmitter {
                     fn: selectOptionsSync,
                 });
             } else {
+                if (!listenerAddedForTask.has(task)) {
+                    el.addEventListener('change', (e: Event) => {
+                        const target = e.target as HTMLSelectElement;
+                        this._evaluateExpr(task.expr, task.ns, true, target.value);
+                    });
+                    listenerAddedForTask.add(task);
+                }
                 this._setConstruction(task, {
                     type: DomConstructionTaskType.SET_PROP,
                     sub: el,
@@ -1123,6 +1143,10 @@ export class CivComponent extends EventEmitter {
                         }
                         case DomMaintenanceTaskType.PROP_SYNC: {
                             this._handlePropSyncTask(task);
+                            break;
+                        }
+                        case DomMaintenanceTaskType.MODEL_SYNC: {
+                            this._handleModelSyncTask(task);
                             break;
                         }
                         case DomMaintenanceTaskType.TPL_SYNC: {
