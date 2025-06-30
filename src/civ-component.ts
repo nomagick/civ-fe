@@ -410,7 +410,7 @@ export class CivComponent extends EventEmitter {
         }
         const componentPlaceHolderElements = new Set<Element>();
 
-        elem.querySelectorAll(`.${componentFlagClass}`).forEach((el) => {
+        const compHdl = (el: Element) => {
             componentPlaceHolderElements.add(el);
             const elSerial = el.getAttribute(significantFlagClass) || '';
             if (!elSerial) {
@@ -424,7 +424,11 @@ export class CivComponent extends EventEmitter {
                 traits,
                 ns
             }, elem);
-        });
+        };
+        if (elem.classList.contains(componentFlagClass)) {
+            compHdl(elem);
+        }
+        elem.querySelectorAll(`.${componentFlagClass}`).forEach(compHdl);
 
         const handler = (el: Element) => {
             const elSerial = el.getAttribute(significantFlagClass) || '';
@@ -1723,4 +1727,24 @@ export function Foreign<T extends CivComponent>(target: T, key: string, _descrip
             return true;
         }
     });
+}
+
+export function ResolveComponents(mappings: Record<string, typeof CivComponent>) {
+    return function (target: typeof CivComponent) {
+        if (typeof target !== 'function') {
+            throw new TypeError("ResolveComponents decorator is intended for class constructors, not for class instances.");
+        }
+        if (!(target.prototype instanceof CivComponent)) {
+            throw new TypeError("ResolveComponents decorator is intended for sub-class of CivComponent.");
+        }
+
+
+        if (target.hasOwnProperty('components')) {
+            Object.assign(target.components, mappings);
+        } else if (target.components) {
+            target.components = Object.assign(Object.create(target.components), mappings);
+        } else {
+            target.components = { ...mappings };
+        }
+    }
 }

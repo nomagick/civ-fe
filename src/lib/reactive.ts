@@ -5,7 +5,7 @@ export const REACTIVE_CFG = Symbol('REACTIVE_CFG');
 
 export interface ReactivityHost {
     [REACTIVE_KIT]: ReactiveKit<this>;
-    [REACTIVE_CFG]: Record<string, ReactivityOpts<this>>;
+    [REACTIVE_CFG]: Record<string, ReactivityOpts<any>>;
 }
 
 export interface ReactivityOpts<T extends ReactivityHost> {
