@@ -20,6 +20,7 @@ import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EventEmitter } from "./lib/event-emitter";
 import { perNextTick } from "./lib/tick";
 import { unwrap } from "./lib/reactive-kit";
+import { isPrimitiveLike } from "./lib/lang";
 import { CivFeError } from "./error";
 
 export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin { }
@@ -227,9 +228,7 @@ export class CivComponent extends EventEmitter {
                 const exprFn = new Function(
                     `with(this) { 
                         with(arguments[0]) { 
-                            return [${parsed.map((x) => x.type === 'expression' ? `JSON.stringify(${x.value})` : JSON.stringify(x.value)).join(', ')}]
-                                .map((x)=> (x===undefined || x===null) ? '' : x)
-                                .join(''); 
+                            return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}];
                             }
                         }`) as ExprFn;
                 expressionMap.set(tpl, exprFn);
@@ -322,8 +321,8 @@ export class CivComponent extends EventEmitter {
             return this.element;
         }
 
-        const tgtNode = tplDom instanceof HTMLDocument ?
-            (tplDom.body.firstElementChild || tplDom.head) : tplDom.documentElement;
+        const tgtNode = tplDom instanceof XMLDocument ?
+            tplDom.documentElement : (tplDom.body.firstElementChild || tplDom.head);
 
         const rootElement = document.importNode(tgtNode, true);
         rootElement.classList.add(identify(this.constructor as typeof CivComponent));
@@ -778,6 +777,7 @@ export class CivComponent extends EventEmitter {
         const nextTrie = new TrieNode<object, Element>(equivalentIterable as Iterable<unknown>);
 
         const newSequence: Node[] = [];
+        const nodeSet = new WeakSet();
 
         for (const _x of it) {
             const cloneNs = Object.create(task.ns || null);
@@ -787,7 +787,15 @@ export class CivComponent extends EventEmitter {
             const n = previousTrie?.seek(...series);
             if (n?.found && n.payload) {
                 nextTrie.insert(...series).payload = n.payload;
+                if (nodeSet.has(n.payload)) {
+                    const subTreeElem = task.tpl.cloneNode(true) as Element;
+                    this._renderTemplateElem(subTreeElem, cloneNs);
+                    newSequence.push(subTreeElem);
+                    nodeSet.add(subTreeElem);
+                    continue;
+                }
                 newSequence.push(n.payload);
+                nodeSet.add(n.payload);
                 continue;
             }
 
@@ -795,6 +803,7 @@ export class CivComponent extends EventEmitter {
             this._renderTemplateElem(subTreeElem, cloneNs);
             nextTrie.insert(...series).payload = subTreeElem;
             newSequence.push(subTreeElem);
+            nodeSet.add(subTreeElem);
         }
 
         this._setConstruction(task, {
@@ -1087,11 +1096,28 @@ export class CivComponent extends EventEmitter {
 
     protected _handleTplSyncTask(task: TplSyncTask) {
         const { vecs, value } = this._evaluateExpr(task.expr, task.ns);
+        let normalizedValue = value;
+        if (Array.isArray(value)) {
+            normalizedValue = value.map((x) => {
+                if (x === undefined || x === null) {
+                    return '';
+                }
+                if (typeof x === 'object') {
+                    if (!isPrimitiveLike(x)) {
+                        vecs.push([unwrap(x), ANY_WRITE_OP_TRIGGER]);
+                    }
+                    return JSON.stringify(x);
+                }
+
+                return String(x);
+            }).join('');
+        }
+
         this._setConstruction(task, {
             type: DomConstructionTaskType.SET_PROP,
             sub: task.text,
             prop: 'nodeValue',
-            val: value,
+            val: normalizedValue,
         });
         this._setupTaskRecurrence(task, vecs);
     }

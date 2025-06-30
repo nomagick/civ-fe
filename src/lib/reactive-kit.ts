@@ -218,14 +218,8 @@ export class ReactiveKit<T extends object = any> extends EventEmitter {
             const rk = this;
             const mangled = function (this: Array<any>, ...args: Parameters<unknown[][T]>): ReturnType<unknown[][T]> {
                 const origVal = globalProxyRevMap.get(this) || this;
-                const length1 = origVal.length;
-                const result = original.apply(origVal, args);
-                const length2 = origVal.length;
+                const result = original.apply(this, args);
                 rk.emit('array-op', origVal, method, ...args);
-                if (length1 !== length2) {
-                    rk.emit('assign', origVal, 'length', length2, length1);
-                    rk.emit('change', origVal, 'length', length2, length1);
-                }
 
                 return result;
             }
