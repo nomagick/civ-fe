@@ -263,7 +263,16 @@ export class CivComponent extends EventEmitter {
                 if (trait.length === 1 || !trait.includes(expr)) {
                     continue;
                 }
-                if (expressionMap.has(expr) || !expr) {
+                if (!expr) {
+                    continue;
+                }
+                if (trait[0] === 'model') {
+                    // Model sync expr have assignment capability
+                    expressionMap.set(expr, new Function(
+                        `with(this) { with(arguments[0]) { if (arguments.length >= 2) { ${expr} = arguments[1];} return ${expr}; } }`
+                    ) as ExprFn);
+                }
+                if (expressionMap.has(expr)) {
                     continue;
                 }
                 if (isMagicForAttr(name)) {
@@ -281,7 +290,7 @@ export class CivComponent extends EventEmitter {
                     expressionMap.set(expr, genFn);
                 } else {
                     expressionMap.set(expr, new Function(
-                        `with(this) { with(arguments[0]) { if (arguments.length >= 2) {${expr} = arguments[1];} return ${expr}; } }`
+                        `with(this) { with(arguments[0]) { return ${expr}; } }`
                     ) as ExprFn);
                 }
             }

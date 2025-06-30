@@ -71,7 +71,6 @@ export function XHTML(text: string) {
 }
 
 function mangleSelectorText(cssRules: CSSRuleList, identifier: string): void {
-
     for (let i = 0; i < cssRules.length; i++) {
         const rule = cssRules[i];
         if (rule instanceof CSSGroupingRule) {
@@ -92,7 +91,6 @@ export function CSS(text: string) {
         if (typeof target !== 'function') {
             throw new TypeError("CSS decorator is intended for classes themselves.");
         }
-
         const identifier = identify(target, !target.hasOwnProperty(REACTIVE_TEMPLATE_IDENTIFIER));
         const sheet = new CSSStyleSheet();
         sheet.replaceSync(text);
