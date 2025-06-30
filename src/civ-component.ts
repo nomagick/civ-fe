@@ -227,7 +227,7 @@ export class CivComponent extends EventEmitter {
                 const exprFn = new Function(
                     `with(this) { 
                         with(arguments[0]) { 
-                            return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}]
+                            return [${parsed.map((x) => x.type === 'expression' ? `JSON.stringify(${x.value})` : JSON.stringify(x.value)).join(', ')}]
                                 .map((x)=> (x===undefined || x===null) ? '' : x)
                                 .join(''); 
                             }
@@ -912,8 +912,10 @@ export class CivComponent extends EventEmitter {
                                             value.splice(index, 1);
                                         }
                                     }
-                                } else {
-                                    this._evaluateExpr(task.expr, task.ns, true, target.checked ? [target.value] : []);
+                                } else if (value && value !== target.value) {
+                                    this._evaluateExpr(task.expr, task.ns, true, target.checked ? [value, target.value] : value);
+                                } else if (!value) {
+                                    this._evaluateExpr(task.expr, task.ns, true, target.checked ? target.value : '');
                                 }
                             }
                         });
@@ -923,7 +925,8 @@ export class CivComponent extends EventEmitter {
                         type: DomConstructionTaskType.SET_PROP,
                         sub: el,
                         prop: 'checked',
-                        val: Boolean(value),
+                        val: value,
+                        fn: checkboxInputSync
                     });
                     break;
                 }
@@ -931,19 +934,8 @@ export class CivComponent extends EventEmitter {
                     if (!listenerAddedForTask.has(task)) {
                         el.addEventListener('change', (e: Event) => {
                             const target = e.target as HTMLInputElement;
-                            const { value } = this._evaluateExpr(task.expr, task.ns, true);
-                            if (Array.isArray(value)) {
-                                if (target.checked && !value.includes(target.value)) {
-                                    value.push(target.value);
-                                } else if (!target.checked && value.includes(target.value)) {
-                                    const index = value.indexOf(target.value);
-                                    if (index !== -1) {
-                                        value.splice(index, 1);
-                                    }
-                                }
-                            } else {
-                                this._evaluateExpr(task.expr, task.ns, true, target.checked ? [target.value] : []);
-                            }
+                            const equiv = target.value === 'on' ? target.checked : target.value;
+                            this._evaluateExpr(task.expr, task.ns, true, equiv);
                         });
                         listenerAddedForTask.add(task);
                     }
@@ -951,7 +943,8 @@ export class CivComponent extends EventEmitter {
                         type: DomConstructionTaskType.SET_PROP,
                         sub: el,
                         prop: 'checked',
-                        val: Boolean(value),
+                        val: value,
+                        fn: checkboxInputSync,
                     });
                     break;
                 }
@@ -1584,6 +1577,30 @@ function selectOptionsSync(task: SetPropTask) {
             option.selected = false;
         }
     }
+}
+
+function checkboxInputSync(task: SetPropTask) {
+    const { sub, prop, val } = task;
+    if (!(sub instanceof HTMLInputElement)) {
+        return;
+    }
+    if (sub.type !== 'checkbox' && sub.type !== 'radio') {
+        return;
+    }
+    if (prop !== 'checked') {
+        return;
+    }
+    if (sub.value === 'on') {
+        sub.checked = Boolean(val);
+        return;
+    }
+    if (Array.isArray(val)) {
+        sub.checked = val.includes(sub.value);
+        return;
+    }
+
+    sub.checked = sub.value === val;
+
 }
 
 function CSSStyleDeclarationSync(task: SetPropTask) {
