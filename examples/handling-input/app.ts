@@ -28,9 +28,9 @@ import { CivComponent, Reactive, Template, css, html } from 'civ-fe';
   margin-bottom: 1em;
 }
 `)
-export class HelloWorld extends CivComponent {
+export class HandlingInput extends CivComponent {
 
-    @Reactive()
+    @Reactive
     message: string = 'Hello World';
 
     reverseMessage() {
@@ -47,4 +47,4 @@ export class HelloWorld extends CivComponent {
     }
 }
 
-new HelloWorld().replaceElement(document.getElementById('app')!);
+new HandlingInput().replaceElement(document.getElementById('app')!);

@@ -248,9 +248,6 @@ export class CivComponent extends EventEmitter {
 
             for (let i = 0; i < elem.attributes.length; i++) {
                 const attr = elem.attributes[i];
-                if (!attr.value) {
-                    continue;
-                };
                 const name = attr.name;
                 const expr = attr.value.trim();
 
@@ -444,6 +441,25 @@ export class CivComponent extends EventEmitter {
                 switch (trait) {
                     case 'attr': {
                         const [attrName, expr] = args;
+                        if (attrName === 'class') {
+                            this._trackTask({
+                                type: DomMaintenanceTaskType.PROP_SYNC,
+                                tgt: el,
+                                prop: 'classList',
+                                expr,
+                                ns,
+                            }, elem);
+                            break;
+                        } else if (attrName === 'style') {
+                            this._trackTask({
+                                type: DomMaintenanceTaskType.PROP_SYNC,
+                                tgt: el,
+                                prop: 'style',
+                                expr,
+                                ns,
+                            }, elem);
+                            break;
+                        }
                         let attrNode: Attr | null = el.getAttributeNode(attrName);
                         if (!attrNode) {
                             attrNode = document.createAttribute(attrName);
@@ -613,6 +629,9 @@ export class CivComponent extends EventEmitter {
 
             // TODO: check if it makes sense to keep these
             el.classList.remove(significantFlagClass);
+            if (el.classList.length === 0) {
+                el.removeAttribute('class');
+            }
             el.removeAttribute(significantFlagClass);
         };
 
@@ -621,6 +640,9 @@ export class CivComponent extends EventEmitter {
     }
 
     protected _evaluateExpr(expr: string, ns: Record<string, unknown> = Object.create(null), noListen?: unknown, assignment?: unknown) {
+        if (!expr) {
+            return { value: expr, vecs: [] }
+        }
         const fn = this._expressionMap.get(expr);
         if (!fn) {
             throw new Error(`Cannot find eval function for expression: ${expr}`);
@@ -642,6 +664,7 @@ export class CivComponent extends EventEmitter {
         const hdl = (tgt: object, prop: string) => {
             vecs.push([tgt, prop]);
         };
+
         this[REACTIVE_KIT].on('access', hdl);
         const r = arguments.length >= 4 ? fn.call(this, ns, assignment) : fn.call(this, ns);
         this[REACTIVE_KIT].off('access', hdl);
@@ -733,6 +756,12 @@ export class CivComponent extends EventEmitter {
                 const bv = lastVec[0];
                 vecs.push([bv, ANY_WRITE_OP_TRIGGER]);
                 equivalentIterable = bv;
+            } else if (Symbol.iterator in initialYield.value) {
+                const unwrapped = unwrap(initialYield.value);
+                if (unwrapped !== initialYield.value) {
+                    equivalentIterable = unwrapped;
+                    vecs.push([unwrapped, ANY_WRITE_OP_TRIGGER]);
+                }
             }
 
             this._setupTaskRecurrence(task, vecs);
@@ -830,6 +859,14 @@ export class CivComponent extends EventEmitter {
                     prop: task.prop,
                     val: value,
                     fn: DOMTokenListSync,
+                });
+            } else if (curVal instanceof CSSStyleDeclaration) {
+                this._setConstruction(task, {
+                    type: DomConstructionTaskType.SET_PROP,
+                    sub: task.tgt,
+                    prop: task.prop,
+                    val: value,
+                    fn: CSSStyleDeclarationSync,
                 });
             } else {
                 let normalizedValue = value;
@@ -1079,6 +1116,8 @@ export class CivComponent extends EventEmitter {
             allVecs.push(...vecs);
             if (value) {
                 chosen = el;
+            } else {
+                rest.push(el);
             }
         }
 
@@ -1238,25 +1277,39 @@ export class CivComponent extends EventEmitter {
 
                         let anchorNode: Node | null = start.nextSibling;
 
-                        const insertionActionPoints: [Node, Node | null, boolean][] = [];
-
+                        const insertionActionPoints: [Node, Node | null, boolean, boolean][] = [];
+                        const arrangedNodes = new WeakSet<Node>();
+                        let visuallyMoved = false;
                         for (const x of con.seq) {
                             if (x.parentElement && x.parentElement !== parent) {
                                 // Element exists but moved to another place
                                 continue;
                             }
                             if (anchorNode === x) {
+                                if (visuallyMoved) {
+                                    insertionActionPoints.push([x, x, false, true]);
+                                    moveRoutine.call(this, x);
+                                }
                                 anchorNode = x.nextSibling;
+                                while (anchorNode && arrangedNodes.has(anchorNode)) {
+                                    anchorNode = anchorNode.nextSibling;
+                                }
                                 continue;
                             }
+                            visuallyMoved = true;
                             const isMove = x.isConnected;
-                            insertionActionPoints.push([x, anchorNode, isMove]);
+                            insertionActionPoints.push([x, anchorNode, isMove, false]);
+                            arrangedNodes.add(x);
                             if (isMove) {
                                 moveRoutine.call(this, x);
                             }
                         }
 
-                        for (const [node, anchor, isMove] of insertionActionPoints) {
+                        for (const [node, anchor, isMove, isVisualMove] of insertionActionPoints) {
+                            if (isVisualMove) {
+                                // This is a visual move, so we don't need to do anything
+                                continue;
+                            }
                             if (isMove) {
                                 if (node instanceof Element) {
                                     moveFunc.call(parent, node, anchor);
@@ -1288,9 +1341,13 @@ export class CivComponent extends EventEmitter {
                             }
                         }
 
-                        for (const [node, _anchor, isMove] of insertionActionPoints) {
+                        for (const [node, _anchor, isMove, isVisualMove] of insertionActionPoints) {
                             if (isMove) {
                                 movedRoutine.call(this, node);
+                                continue;
+                            }
+                            if (isVisualMove) {
+                                movedRoutine.call(this, node, false);
                                 continue;
                             }
                             attachRoutine.call(this, node);
@@ -1417,23 +1474,20 @@ function moveRoutine(this: CivComponent, sub: Node) {
         sub.dispatchEvent(event);
     }
 }
-function movedRoutine(this: CivComponent, sub: Node) {
+function movedRoutine(this: CivComponent, sub: Node, isRealMove: boolean = true) {
     if (sub.isConnected) {
         const event = new CustomEvent(movedEventName, {
             detail: { component: this }
         });
         sub.dispatchEvent(event);
         if (sub instanceof Element) {
-            const hdl = (el: Element) => {
-                const comp = elementToComponentMap.get(el);
-                if (!comp) {
-                    return;
-                }
-                if ('connectedMoveCallback' in comp && typeof comp.connectedMoveCallback === 'function') {
-                    Reflect.apply(comp.connectedMoveCallback, comp, []);
-                }
-            };
-            hdl(sub);
+            const comp = elementToComponentMap.get(sub);
+            if (!comp) {
+                return;
+            }
+            if (isRealMove && 'connectedMoveCallback' in comp && typeof comp.connectedMoveCallback === 'function') {
+                Reflect.apply(comp.connectedMoveCallback, comp, []);
+            }
             // sub.querySelectorAll(`.${componentFlagClass}`).forEach(hdl);
         }
     }
@@ -1485,16 +1539,14 @@ function DOMTokenListSync(task: SetPropTask) {
         return;
     }
     if (typeof val === 'object' && val !== null) {
-        if (typeof val === 'object' && val !== null) {
-            for (const [k, v] of Object.entries(val)) {
-                if (v) {
-                    list.add(k);
-                } else {
-                    list.remove(k);
-                }
+        for (const [k, v] of Object.entries(val)) {
+            if (v) {
+                list.add(k);
+            } else {
+                list.remove(k);
             }
-            return;
         }
+        return;
     }
     if (Array.isArray(val)) {
         list.value = val.join(' ');
@@ -1532,6 +1584,39 @@ function selectOptionsSync(task: SetPropTask) {
             option.selected = false;
         }
     }
+}
+
+function CSSStyleDeclarationSync(task: SetPropTask) {
+    const { sub, prop, val } = task;
+    if (!(sub instanceof Element)) {
+        return;
+    }
+    const style = Reflect.get(sub, prop);
+    if (!(style instanceof CSSStyleDeclaration)) {
+        return;
+    }
+    if (typeof val === 'object' && val !== null) {
+        for (const [k, v] of Object.entries(val)) {
+            if (k in style) {
+                const normalizedValue = (v === undefined || v === null) ? '' : String(v);
+                Reflect.set(style, k, normalizedValue);
+            }
+        }
+        return;
+    }
+    if (Array.isArray(val)) {
+        style.cssText = val.map((x) => {
+            const txt = `${x}`.trim();
+            return txt.endsWith(';') ? txt : `${txt};`
+        }).join('\n');
+        return;
+    }
+    if (typeof val === 'string') {
+        style.cssText = val;
+        return;
+    }
+
+    style.cssText = '';
 }
 
 
