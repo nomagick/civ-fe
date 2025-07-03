@@ -13,5 +13,11 @@ export * from "./lib/tick";
 export * from "./lib/once";
 export * from "./lib/transition";
 export * from "./lib/transition-group";
+export * from "./lib/debounce";
+export * from "./lib/defer";
+export * from "./lib/max-concurrency";
+export * from "./lib/retry";
+export * from "./lib/throttle";
+
 
 export default CivComponent;
