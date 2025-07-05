@@ -157,6 +157,27 @@ export class CivComponent extends EventEmitter {
         return this._cleanup();
     }
 
+    watch(prop: string, cb: (newVal: unknown, oldVal: unknown) => void, opts: { signal?: AbortSignal }): void;
+    watch(prop: string, ref: object, cb: (newVal: unknown, oldVal: unknown) => void, opts: { signal?: AbortSignal }): void;
+    watch() {
+        let prop: string = arguments[0];
+        let ref: object = this;
+        let cb;
+        let opts: { signal?: AbortSignal } = {};
+        if (typeof arguments[1] === 'object') {
+            [, ref, cb, opts] = arguments;
+        } else {
+            [, cb, opts] = arguments;
+        }
+
+        this[REACTIVE_KIT].addEventListener('change', (event) => {
+            const [tgt, propName, newVal, oldVal] = (event as CustomEvent).detail;
+            if (tgt === ref && propName === prop) {
+                cb(newVal, oldVal);
+            }
+        }, { signal: opts.signal });
+    }
+
     [Symbol.dispose]() {
         this.cleanup();
     }
