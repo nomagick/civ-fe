@@ -1,9 +1,9 @@
 # Civ-FE
 
 ## Overview
-Civ-FE is the frontend side of CivKit, a TypeScript full-stack development framework created by professionals, for professionals, to build long-lasting reusable components and applications.
+Civ-FE is the frontend branch of CivKit, a TypeScript full-stack development framework created by professionals, for professionals, to build long-lasting reusable components and applications.
 
-Civ-FE aims to tackle some of the structural deficiency of the Frontend industry as we know it in 2014-2025, filling the gap between "frontend" and general software engineering.
+It aims to tackle some of the structural deficiencies plaguing the Frontend industry, filling the gap between "frontend" and general software engineering.
 
 Web frontend developers had been mostly "new" to reference managing, and always repeatedly generate similar but new objects of specific structure. This is the root cause of frontend performance issue and a twisted mindset.
 Same happens to OOP, a cornerstone of software engineering, causing major deficiency in code structure and maintainability.
