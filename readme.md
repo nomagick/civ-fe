@@ -21,8 +21,8 @@ Civ-FE is designed to address these issues, and provide a solid foundation for b
 
 ## FAQ
 ### Why another framework?
-React: mixing template and logic, readability nightmare, superficial "functional programming", Edo-Tensei of PHP
-Vue: erosion of engineering principles, mindless copycat, normalization of bad practices, marketing over substance
+React: mixing template and logic, readability nightmare, superficial "functional programming", Edo-Tensei of PHP  
+Vue: erosion of engineering principles, mindless copycat, normalization of bad practices, marketing over substance  
 Angular: over engineering, arbitrary use of rxjs, KPI centric, corporate bloat
 
 Thing in common: repelling of DOM, undermining long term career development of frontend developers.
