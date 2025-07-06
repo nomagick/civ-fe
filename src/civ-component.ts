@@ -31,6 +31,7 @@ let serial = 1;
 
 type ExprFn = (this: CivComponent, _ns: Record<string, unknown>, assignment?: unknown) => unknown;
 type GenExprFn = (this: CivComponent, _ns: Record<string, unknown>) => Generator;
+type WatcherOpts = { signal?: AbortSignal, immediate?: boolean, once?: boolean; };
 
 const ANY_WRITE_OP_TRIGGER = '__civ_any_write_op_trigger__';
 
@@ -157,25 +158,29 @@ export class CivComponent extends EventEmitter {
         return this._cleanup();
     }
 
-    watch(prop: string, cb: (newVal: unknown, oldVal: unknown) => void, opts: { signal?: AbortSignal }): void;
-    watch(prop: string, ref: object, cb: (newVal: unknown, oldVal: unknown) => void, opts: { signal?: AbortSignal }): void;
+    watch<T extends keyof this>(prop: T, cb: (newVal: this[T], oldVal: this[T]) => void, opts?: WatcherOpts): void;
+    watch<P extends object, T extends keyof P>(prop: T, ref: P, cb: (newVal: P[T], oldVal: P[T]) => void, opts?: WatcherOpts): void;
     watch() {
         let prop: string = arguments[0];
         let ref: object = this;
         let cb;
-        let opts: { signal?: AbortSignal } = {};
+        let opts: WatcherOpts = {};
         if (typeof arguments[1] === 'object') {
             [, ref, cb, opts] = arguments;
         } else {
             [, cb, opts] = arguments;
         }
+        const finalRef = ref === this ? this[REACTIVE_KIT].target : unwrap(ref);
 
         this[REACTIVE_KIT].addEventListener('change', (event) => {
             const [tgt, propName, newVal, oldVal] = (event as CustomEvent).detail;
-            if (tgt === ref && propName === prop) {
+            if (tgt === finalRef && propName === prop) {
                 cb(newVal, oldVal);
             }
-        }, { signal: opts.signal });
+        }, { signal: opts?.signal, once: opts?.once });
+        if (opts?.immediate) {
+            cb(Reflect.get(finalRef, prop), undefined);
+        }
     }
 
     [Symbol.dispose]() {
