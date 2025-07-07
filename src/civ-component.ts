@@ -45,6 +45,7 @@ const moveFunc: <T extends Node>(this: T, node: Node, anchor: Node | null) => T 
     'moveBefore' in Element.prototype ? Element.prototype.moveBefore : Element.prototype.insertBefore as any;
 
 const listenerAddedForTask = new WeakSet<DomMaintenanceTask>();
+const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
 
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
@@ -55,7 +56,6 @@ export class CivComponent extends EventEmitter {
     protected _pendingTasks: DomMaintenanceTask[] = [];
     protected _pendingConstructions: Map<DomConstructionTask | DomMaintenanceTask, DomConstructionTask> = new Map();
     protected _revokers?: Set<AbortController>;
-    protected _reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
     protected _subtreeRenderTaskTrack?: WeakMap<SubtreeRenderTask, TrieNode<object, Element>>;
     protected _placeHolderElementToTasksMap?: WeakMap<Element, Set<DomMaintenanceTask>>;
     protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
@@ -751,13 +751,14 @@ export class CivComponent extends EventEmitter {
         const handler = () => {
             abortCtl.abort('recur');
             this._pendingTasks.push(task);
+            this._digestTasks();
         };
 
         for (const [tgt, prop] of vecs) {
-            let evtgt = this._reactiveTargets.get(tgt);
+            let evtgt = reactiveTargets.get(tgt);
             if (!evtgt) {
                 evtgt = new EventTarget();
-                this._reactiveTargets.set(tgt, evtgt);
+                reactiveTargets.set(tgt, evtgt);
             }
             evtgt.addEventListener(prop, handler, { signal: abortCtl.signal, once: true });
         }
@@ -1481,41 +1482,37 @@ export class CivComponent extends EventEmitter {
 
     protected _setupReactivity() {
         this[REACTIVE_KIT].on('change', (tgt, prop, newVal, oldVal) => {
-            const evtgt = this._reactiveTargets.get(tgt);
+            const evtgt = reactiveTargets.get(tgt);
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { newVal, oldVal } });
                 evtgt.dispatchEvent(ev);
                 const ev2 = new CustomEvent(ANY_WRITE_OP_TRIGGER, { detail: { newVal, oldVal } });
                 evtgt.dispatchEvent(ev2);
-                this._digestTasks();
             }
         });
         this[REACTIVE_KIT].on('delete', (tgt, prop, oldVal) => {
-            const evtgt = this._reactiveTargets.get(tgt);
+            const evtgt = reactiveTargets.get(tgt);
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { oldVal } });
                 evtgt.dispatchEvent(ev);
                 const ev2 = new CustomEvent(ANY_WRITE_OP_TRIGGER, { detail: { oldVal } });
                 evtgt.dispatchEvent(ev2);
-                this._digestTasks();
             }
         });
         this[REACTIVE_KIT].on('define', (tgt, prop, desc, oldVal) => {
-            const evtgt = this._reactiveTargets.get(tgt);
+            const evtgt = reactiveTargets.get(tgt);
             if (evtgt) {
                 const ev = new CustomEvent(prop, { detail: { desc, oldVal } });
                 evtgt.dispatchEvent(ev);
                 const ev2 = new CustomEvent(ANY_WRITE_OP_TRIGGER, { detail: { desc, oldVal } });
                 evtgt.dispatchEvent(ev2);
-                this._digestTasks();
             }
         });
         this[REACTIVE_KIT].on('array-op', (tgt, method, ...args) => {
-            const evtgt = this._reactiveTargets.get(tgt);
+            const evtgt = reactiveTargets.get(tgt);
             if (evtgt) {
                 const ev = new CustomEvent(ANY_WRITE_OP_TRIGGER, { detail: { method, args } });
                 evtgt.dispatchEvent(ev);
-                this._digestTasks();
             }
         });
 
