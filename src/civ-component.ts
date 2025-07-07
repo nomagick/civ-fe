@@ -690,17 +690,17 @@ export class CivComponent extends EventEmitter {
             return { value: fn.call(this, ns), vecs: [] };
         }
 
-        const vecs: [object, string][] = [];
+        const vecs = new Map<object, string>();
 
         const hdl = (tgt: object, prop: string) => {
-            vecs.push([tgt, prop]);
+            vecs.set(tgt, prop);
         };
 
         this[REACTIVE_KIT].on('access', hdl);
         const r = arguments.length >= 4 ? fn.call(this, ns, assignment) : fn.call(this, ns);
         this[REACTIVE_KIT].off('access', hdl);
 
-        return { value: r, vecs };
+        return { value: r, vecs: Array.from(vecs.entries()) };
     }
 
     protected *_evaluateForExpr(expr: string, ns: Record<string, unknown> = Object.create(null)) {
@@ -713,27 +713,27 @@ export class CivComponent extends EventEmitter {
             throw new Error(`Cannot evaluate non generator function: ${fn.name}. Use _evaluateExpr instead.`);
         }
 
-        const vecs: [object, string][] = [];
+        const vecs = new Map<object, string>();
 
         const hdl = (tgt: object, prop: string) => {
-            vecs.push([tgt, prop]);
+            vecs.set(tgt, prop);
         };
         this[REACTIVE_KIT].on('access', hdl);
         const it = fn.call(this, ns) as Generator;
         const initialYield = it.next();
         this[REACTIVE_KIT].off('access', hdl);
 
-        yield { value: initialYield.value, vecs, ns };
+        yield { value: initialYield.value, vecs: Array.from(vecs.entries()), ns };
 
-        const dVecs: [object, string][] = [];
+        const dVecs = new Map<object, string>();
         const dhdl = (tgt: object, prop: string) => {
-            dVecs.push([tgt, prop]);
+            dVecs.set(tgt, prop);
         };
         this[REACTIVE_KIT].on('access', dhdl);
 
         for (const x of it) {
-            yield { value: x, vecs: Array.from(dVecs) };
-            dVecs.length = 0;
+            yield { value: x, vecs: Array.from(dVecs.entries()) };
+            dVecs.clear();
         }
     }
 
