@@ -49,7 +49,8 @@ const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
 
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
-    static expressionMap: Map<string, ExprFn | GenExprFn> = new Map();
+    static expressionMap: Map<string, ExprFn> = new Map();
+    static generatorExpressionMap?: Map<string, GenExprFn>;
     static elemTraitsLookup: Map<string, Traits> = new Map();
     readonly serial = serial++;
     element: Element;
@@ -193,6 +194,9 @@ export class CivComponent extends EventEmitter {
     protected get _expressionMap() {
         return (this.constructor as typeof CivComponent).expressionMap;
     }
+    protected get _generatorExpressionMap() {
+        return (this.constructor as typeof CivComponent).generatorExpressionMap;
+    }
     protected get _elemTraitsLookup() {
         return (this.constructor as typeof CivComponent).elemTraitsLookup;
     }
@@ -205,7 +209,6 @@ export class CivComponent extends EventEmitter {
         if (this.constructor.hasOwnProperty('components')) {
             const components = (this.constructor as typeof CivComponent).components;
             for (const [k, v] of Object.entries(components)) {
-                Reflect.deleteProperty(components, k);
                 Reflect.set(components, k.toUpperCase(), v);
             }
         }
@@ -239,6 +242,7 @@ export class CivComponent extends EventEmitter {
         });
 
         const expressionMap = (this.constructor as typeof CivComponent).expressionMap;
+        const generatorExpressionMap = (this.constructor as typeof CivComponent).generatorExpressionMap || new Map();
         const elemTraitsMap: Map<Element, Traits> = new Map();
         const components = (this.constructor as typeof CivComponent).components;
 
@@ -294,10 +298,12 @@ export class CivComponent extends EventEmitter {
                         `with(this) { with(arguments[0]) { if (arguments.length >= 2) { ${expr} = arguments[1];} return ${expr}; } }`
                     ) as ExprFn);
                 }
-                if (expressionMap.has(expr)) {
-                    continue;
-                }
+
                 if (isMagicForAttr(name)) {
+                    if (generatorExpressionMap.has(expr)) {
+                        elem.classList.add(subtreeTemplateFlagClass);
+                        continue;
+                    }
                     const matched = expr.match(forExpRegex);
                     if (!matched) {
                         throw new Error(`Invalid expression for *for: ${expr}`);
@@ -309,8 +315,8 @@ export class CivComponent extends EventEmitter {
                         value: `*${genFn.name}`,
                         configurable: true
                     });
-                    expressionMap.set(expr, genFn);
-                } else {
+                    generatorExpressionMap.set(expr, genFn);
+                } else if (!expressionMap.has(expr)) {
                     expressionMap.set(expr, new Function(
                         `with(this) { with(arguments[0]) { return ${expr}; } }`
                     ) as ExprFn);
@@ -335,6 +341,9 @@ export class CivComponent extends EventEmitter {
         const sheet = this[REACTIVE_TEMPLATE_SHEET];
         if (sheet) {
             document.adoptedStyleSheets.push(sheet);
+        }
+        if (generatorExpressionMap.size && !(this.constructor as typeof CivComponent).generatorExpressionMap) {
+            (this.constructor as typeof CivComponent).generatorExpressionMap = generatorExpressionMap;
         }
     }
 
@@ -704,7 +713,7 @@ export class CivComponent extends EventEmitter {
     }
 
     protected *_evaluateForExpr(expr: string, ns: Record<string, unknown> = Object.create(null)) {
-        const fn = this._expressionMap.get(expr);
+        const fn = this._generatorExpressionMap?.get(expr);
         if (!fn) {
             throw new Error(`Cannot find generator function for expression: ${expr}`);
         }
