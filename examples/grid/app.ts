@@ -1,22 +1,22 @@
-import { CivComponent, Reactive, Template, scss, html, unwrap } from 'civ-fe';
+import { CivComponent, Reactive, Template, scss, html, xhtml, unwrap, ResolveComponents } from 'civ-fe';
 
 
 @Template(html`
 <table v-if="filteredData.length">
   <thead>
     <tr>
-      <th v-for="key in columns"
+      <th v-for="key of columns"
         @click="sortBy(key)"
         :class="{ active: sortKey == key }">
         {{ capitalize(key) }}
-        <span class="arrow" :class="sortOrders[key] > 0 ? 'asc' : 'dsc'">
+        <span class="arrow" :class="sortDirection > 0 ? 'asc' : 'dsc'">
         </span>
       </th>
     </tr>
   </thead>
   <tbody>
-    <tr v-for="entry in filteredData">
-      <td v-for="key in columns">
+    <tr v-for="entry of filteredData">
+      <td v-for="key of columns">
         {{entry[key]}}
       </td>
     </tr>
@@ -127,13 +127,27 @@ export class Grid extends CivComponent {
 
 }
 
-
+@ResolveComponents({
+    DemoGrid: Grid
+})
+@Template(xhtml`
+<div>
+    <form id="search">
+      Search <input name="query" v-model="searchQuery" />
+    </form>
+    <DemoGrid
+      prop:data="gridData"
+      prop:columns="gridColumns"
+      prop:filterKey="searchQuery">
+    </DemoGrid>
+</div>`
+)
 export class GridApp extends CivComponent {
 
     @Reactive
     searchQuery: string = '';
     @Reactive
-    gridColumns: string[] = [];
+    gridColumns: string[] = ['name', 'power'];
     @Reactive
     gridData: object[] = [
         { name: 'Chuck Norris', power: Infinity },
