@@ -9,7 +9,7 @@ import { CivComponent, Reactive, Template, scss, html, xhtml, unwrap, ResolveCom
         @click="sortBy(key)"
         :class="{ active: sortKey == key }">
         {{ capitalize(key) }}
-        <span class="arrow" :class="sortDirection > 0 ? 'asc' : 'dsc'">
+        <span class="arrow" :class="sortDirection > 0 ? 'arrow asc' : 'arrow dsc'">
         </span>
       </th>
     </tr>
