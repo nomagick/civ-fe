@@ -514,10 +514,14 @@ export class CivComponent extends EventEmitter {
                     }
                     case 'prop': {
                         const [propName, expr] = args;
+                        let mappedPropName = propName;
+                        if (mappedPropName.includes('-')) {
+                            mappedPropName = mappedPropName.replaceAll(/-+([a-z])/g, (_match, p1) => p1.toUpperCase());
+                        }
                         this._trackTask({
                             type: DomMaintenanceTaskType.PROP_SYNC,
                             tgt: el,
-                            prop: propName,
+                            prop: mappedPropName,
                             expr,
                             ns,
                         }, elem);
