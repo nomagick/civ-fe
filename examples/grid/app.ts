@@ -24,7 +24,7 @@ import { CivComponent, Reactive, Template, scss, html, xhtml, unwrap, ResolveCom
 </table>
 `, scss`
 :host {
-    table {
+    &.table {
         border: 2px solid #42b983;
         border-radius: 3px;
         background-color: #fff;

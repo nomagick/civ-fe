@@ -96,9 +96,10 @@ export class CivComponent extends EventEmitter {
             el.removeAttributeNode(attr);
             targetElement.setAttributeNode(attr);
         }
-
         const compCls = this.constructor as typeof CivComponent;
         const clsId = identify(compCls);
+        // "class" attribute could have been replaced, loosing class identifier, adding it back here
+        targetElement.classList.add(clsId);
 
         const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
         if (defaultSlot) {
