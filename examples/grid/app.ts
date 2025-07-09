@@ -1,4 +1,4 @@
-import { CivComponent, Reactive, Template, scss, html, xhtml, unwrap, ResolveComponents } from 'civ-fe';
+import { CivComponent, Reactive, Template, scss, html, unwrap, ResolveComponents } from 'civ-fe';
 
 
 @Template(html`
@@ -9,7 +9,7 @@ import { CivComponent, Reactive, Template, scss, html, xhtml, unwrap, ResolveCom
         @click="sortBy(key)"
         :class="{ active: sortKey == key }">
         {{ capitalize(key) }}
-        <span class="arrow" :class="sortDirection > 0 ? 'arrow asc' : 'arrow dsc'">
+        <span v-if="sortKey === key" class="arrow" :class="sortDirection > 0 ? 'arrow asc' : 'arrow dsc'">
         </span>
       </th>
     </tr>
@@ -130,15 +130,15 @@ export class Grid extends CivComponent {
 @ResolveComponents({
     DemoGrid: Grid
 })
-@Template(xhtml`
+@Template(html`
 <div>
     <form id="search">
       Search <input name="query" v-model="searchQuery" />
     </form>
     <DemoGrid
-      prop:data="gridData"
-      prop:columns="gridColumns"
-      prop:filterKey="searchQuery">
+      .data="gridData"
+      .columns="gridColumns"
+      .filter-key="searchQuery">
     </DemoGrid>
 </div>`
 )
