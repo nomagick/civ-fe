@@ -704,17 +704,28 @@ export class CivComponent extends EventEmitter {
             return { value: fn.call(this, ns), vecs: [] };
         }
 
-        const vecs = new Map<object, string>();
+        const dedup = new Map<object, Set<string>>();
+        const vecs: [object, string][] = [];
 
         const hdl = (tgt: object, prop: string) => {
-            vecs.set(tgt, prop);
+            const s = dedup.get(tgt);
+            if (!s) {
+                dedup.set(tgt, new Set([prop]));
+                vecs.push([tgt, prop]);
+                return;
+            }
+            if (s.has(prop)) {
+                return;
+            }
+            s.add(prop);
+            vecs.push([tgt, prop]);
         };
 
         this[REACTIVE_KIT].on('access', hdl);
         const r = arguments.length >= 4 ? fn.call(this, ns, assignment) : fn.call(this, ns);
         this[REACTIVE_KIT].off('access', hdl);
 
-        return { value: r, vecs: Array.from(vecs.entries()) };
+        return { value: r, vecs };
     }
 
     protected *_evaluateForExpr(expr: string, ns: Record<string, unknown> = Object.create(null)) {
@@ -727,27 +738,54 @@ export class CivComponent extends EventEmitter {
             throw new Error(`Cannot evaluate non generator function: ${fn.name}. Use _evaluateExpr instead.`);
         }
 
-        const vecs = new Map<object, string>();
+        const dedup = new Map<object, Set<string>>();
+        const vecs: [object, string][] = [];
 
         const hdl = (tgt: object, prop: string) => {
-            vecs.set(tgt, prop);
+            const s = dedup.get(tgt);
+            if (!s) {
+                dedup.set(tgt, new Set([prop]));
+                vecs.push([tgt, prop]);
+                return;
+            }
+            if (s.has(prop)) {
+                return;
+            }
+            s.add(prop);
+            vecs.push([tgt, prop]);
         };
         this[REACTIVE_KIT].on('access', hdl);
         const it = fn.call(this, ns) as Generator;
         const initialYield = it.next();
         this[REACTIVE_KIT].off('access', hdl);
 
-        yield { value: initialYield.value, vecs: Array.from(vecs.entries()), ns };
+        yield { value: initialYield.value, vecs, ns };
 
-        const dVecs = new Map<object, string>();
+        const dDedup = new Map<object, Set<string>>();
+        const dVecs: [object, string][] = [];
         const dhdl = (tgt: object, prop: string) => {
-            dVecs.set(tgt, prop);
+            const s1 = dedup.get(tgt);
+            if (s1 && s1.has(prop)) {
+                return;
+            }
+            const s2 = dDedup.get(tgt);
+            if (!s2) {
+                dDedup.set(tgt, new Set([prop]));
+                dVecs.push([tgt, prop]);
+                return;
+            }
+            if (s2.has(prop)) {
+                return;
+            }
+            s2.add(prop);
+            dVecs.push([tgt, prop]);
         };
         this[REACTIVE_KIT].on('access', dhdl);
 
         for (const x of it) {
-            yield { value: x, vecs: Array.from(dVecs.entries()) };
-            dVecs.clear();
+            yield { value: x, vecs: vecs.concat(dVecs), ns };
+            dVecs.length = 0;
+            dDedup.clear();
         }
     }
 
