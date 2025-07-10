@@ -1492,6 +1492,15 @@ export class CivComponent extends EventEmitter {
                     case DomConstructionTaskType.GROUP_TOGGLE: {
                         const anchor = con.anchor;
                         const chosen = con.chosen;
+                        if (!anchor.parentNode) {
+                            for (const el of [chosen, ...con.rest]) {
+                                if (!el?.parentNode) {
+                                    continue;
+                                }
+                                el.parentNode.insertBefore(anchor, el);
+                                break;
+                            }
+                        }
                         if (chosen) {
                             const previouslyConnected = chosen.isConnected;
                             anchor.parentNode?.insertBefore(chosen, anchor);
