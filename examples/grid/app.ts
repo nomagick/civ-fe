@@ -91,20 +91,24 @@ export class Grid extends CivComponent {
     sortDirection?: -1 | 1;
 
     get filteredData() {
-        const data = unwrap(this.data);
+        let data = unwrap(this.data);
         if (this.filterKey) {
-            return data.filter((item) => {
+            data = data.filter((item) => {
                 return Object.values(item).some((value) =>
                     String(value).toLowerCase().includes(this.filterKey!.toLowerCase())
                 );
             });
         }
         if (this.sortKey) {
-            return [...data].sort((a, b) => {
+            data = data.sort((a, b) => {
                 const aValue = Reflect.get(a, this.sortKey!);
                 const bValue = Reflect.get(b, this.sortKey!);
-                if (aValue < bValue) return -1 * (this.sortDirection === -1 ? 1 : 0);
-                if (aValue > bValue) return 1 * (this.sortDirection === -1 ? 1 : 0);
+                if (aValue < bValue) {
+                    return this.sortDirection === 1 ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return this.sortDirection === 1 ? 1 : -1;
+                }
                 return 0;
             });
         }
