@@ -1,5 +1,8 @@
 import { DomConstructionTask, DomMaintenanceTask, DomConstructionTaskType, DomMaintenanceTaskType } from './dom';
 
+const DomMaintenanceTaskTypes = new Set<any>(Object.values(DomMaintenanceTaskType));
+const DomConstructionTaskTypes = new Set<any>(Object.values(DomConstructionTaskType));
+
 export class CivFeError extends Error {
 
     task?: DomMaintenanceTask | DomConstructionTask;
@@ -10,8 +13,8 @@ export class CivFeError extends Error {
         }
 
         if (task) {
-            const typ = task.type in DomMaintenanceTaskType ? 'Maintenance' :
-                task.type in DomConstructionTaskType ? 'Construction' :
+            const typ = DomMaintenanceTaskTypes.has(task.type) ? 'Maintenance' :
+                DomConstructionTaskTypes.has(task.type) ? 'Construction' :
                     'Unknown';
 
             if (error instanceof Error) {

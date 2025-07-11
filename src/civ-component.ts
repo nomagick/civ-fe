@@ -46,6 +46,7 @@ const moveFunc: <T extends Node>(this: T, node: Node, anchor: Node | null) => T 
 
 const listenerAddedForTask = new WeakSet<DomMaintenanceTask>();
 const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
+const placeHolderElementToRealElementMap: WeakMap<Node, Node> = new WeakMap();
 
 export class CivComponent extends EventEmitter {
     static components: Record<string, typeof CivComponent> = {};
@@ -722,8 +723,18 @@ export class CivComponent extends EventEmitter {
         };
 
         this[REACTIVE_KIT].on('access', hdl);
-        const r = arguments.length >= 4 ? fn.call(this, ns, assignment) : fn.call(this, ns);
-        this[REACTIVE_KIT].off('access', hdl);
+        let r;
+        try {
+            r = arguments.length >= 4 ? fn.call(this, ns, assignment) : fn.call(this, ns);
+        } catch (error) {
+            const err = CivFeError.from(error);
+            err.message = `[TPL expr: ${expr}] ${err.message}`;
+            // @ts-ignore
+            Error.captureStackTrace(err, fn);
+            throw err;
+        } finally {
+            this[REACTIVE_KIT].off('access', hdl);
+        }
 
         return { value: r, vecs };
     }
@@ -755,9 +766,19 @@ export class CivComponent extends EventEmitter {
             vecs.push([tgt, prop]);
         };
         this[REACTIVE_KIT].on('access', hdl);
-        const it = fn.call(this, ns) as Generator;
-        const initialYield = it.next();
-        this[REACTIVE_KIT].off('access', hdl);
+        let it, initialYield;
+        try {
+            it = fn.call(this, ns) as Generator;
+            initialYield = it.next();
+        } catch (error) {
+            const err = CivFeError.from(error);
+            err.message = `[TPL expr: ${expr}] ${err.message}`;
+            // @ts-ignore
+            Error.captureStackTrace(err, fn);
+            throw err;
+        } finally {
+            this[REACTIVE_KIT].off('access', hdl);
+        }
 
         yield { value: initialYield.value, vecs, ns };
 
@@ -782,10 +803,20 @@ export class CivComponent extends EventEmitter {
         };
         this[REACTIVE_KIT].on('access', dhdl);
 
-        for (const x of it) {
-            yield { value: x, vecs: vecs.concat(dVecs), ns };
-            dVecs.length = 0;
-            dDedup.clear();
+        try {
+            for (const x of it) {
+                yield { value: x, vecs: vecs.concat(dVecs), ns };
+                dVecs.length = 0;
+                dDedup.clear();
+            }
+        } catch (error) {
+            const err = CivFeError.from(error);
+            err.message = `[TPL iter: ${expr}] ${err.message}`;
+            // @ts-ignore
+            Error.captureStackTrace(err, fn);
+            throw err;
+        } finally {
+            this[REACTIVE_KIT].off('access', dhdl);
         }
     }
 
@@ -821,9 +852,6 @@ export class CivComponent extends EventEmitter {
 
     protected _handleSubtreeRenderTask(task: SubtreeRenderTask) {
         const nsObj: Record<string, unknown> = Object.create(task.ns || null);
-        for (const identifier of task.injectNs) {
-            Reflect.set(nsObj, identifier, undefined);
-        }
         const it = this._evaluateForExpr(task.expr, nsObj);
 
         const initialYield = it.next().value;
@@ -831,6 +859,9 @@ export class CivComponent extends EventEmitter {
             throw new Error(`Invalid *for expression: ${task.expr} in component ${identify(this.constructor as typeof CivComponent)}`);
         }
         let equivalentIterable = initialYield.value;
+        if (!equivalentIterable) { 
+            it.return();
+        }
         let isReactive = false;
         if (initialYield.vecs.length) {
             const vecs = [...initialYield.vecs];
@@ -840,18 +871,18 @@ export class CivComponent extends EventEmitter {
                 const bv = lastVec[0];
                 vecs.push([bv, ANY_WRITE_OP_TRIGGER]);
                 equivalentIterable = bv;
-            } else if (Symbol.iterator in initialYield.value) {
-                const unwrapped = unwrap(initialYield.value);
-                if (unwrapped !== initialYield.value) {
+            } else if (equivalentIterable && Symbol.iterator in equivalentIterable) {
+                const unwrapped = unwrap(equivalentIterable);
+                if (unwrapped !== equivalentIterable) {
                     equivalentIterable = unwrapped;
                     vecs.push([unwrapped, ANY_WRITE_OP_TRIGGER]);
                 }
             }
 
             this._setupTaskRecurrence(task, vecs);
-        } else if (Symbol.iterator in initialYield.value) {
-            const unwrapped = unwrap(initialYield.value);
-            if (unwrapped !== initialYield.value) {
+        } else if (equivalentIterable && Symbol.iterator in equivalentIterable) {
+            const unwrapped = unwrap(equivalentIterable);
+            if (unwrapped !== equivalentIterable) {
                 isReactive = true;
                 equivalentIterable = unwrapped;
                 this._setupTaskRecurrence(task, [[unwrapped, ANY_WRITE_OP_TRIGGER]]);
@@ -864,6 +895,11 @@ export class CivComponent extends EventEmitter {
         const newSequence: Node[] = [];
         const nodeSet = new WeakSet();
 
+        if (equivalentIterable) {
+            for (const identifier of task.injectNs) {
+                Reflect.set(nsObj, identifier, undefined);
+            }
+        }
         for (const _x of it) {
             const cloneNs = Object.create(task.ns || null);
             Object.assign(cloneNs, nsObj);
@@ -914,6 +950,7 @@ export class CivComponent extends EventEmitter {
         const el = task.sub;
         const instance = Reflect.construct(compCls, []) as CivComponent;
         const newEl = instance.replaceElement(el);
+        placeHolderElementToRealElementMap.set(el, newEl);
         const relTasks = this._placeHolderElementToTasksMap?.get(el);
         if (relTasks?.size) {
             for (const t of relTasks) {
@@ -1415,27 +1452,28 @@ export class CivComponent extends EventEmitter {
                         const arrangedNodes = new WeakSet<Node>();
                         let visuallyMoved = false;
                         for (const x of con.seq) {
-                            if (x.parentElement && x.parentElement !== parent) {
+                            const el = placeHolderElementToRealElementMap.get(x) || x;
+                            if (el.parentElement && el.parentElement !== parent) {
                                 // Element exists but moved to another place
                                 continue;
                             }
-                            if (anchorNode === x) {
+                            if (anchorNode === el) {
                                 if (visuallyMoved) {
-                                    insertionActionPoints.push([x, x, false, true]);
-                                    moveRoutine.call(this, x);
+                                    insertionActionPoints.push([el, el, false, true]);
+                                    moveRoutine.call(this, el);
                                 }
-                                anchorNode = x.nextSibling;
+                                anchorNode = el.nextSibling;
                                 while (anchorNode && arrangedNodes.has(anchorNode)) {
                                     anchorNode = anchorNode.nextSibling;
                                 }
                                 continue;
                             }
                             visuallyMoved = true;
-                            const isMove = x.isConnected;
-                            insertionActionPoints.push([x, anchorNode, isMove, false]);
-                            arrangedNodes.add(x);
+                            const isMove = el.isConnected;
+                            insertionActionPoints.push([el, anchorNode, isMove, false]);
+                            arrangedNodes.add(el);
                             if (isMove) {
-                                moveRoutine.call(this, x);
+                                moveRoutine.call(this, el);
                             }
                         }
 
@@ -1578,7 +1616,7 @@ export class CivComponent extends EventEmitter {
         });
 
         this.on('error', (...args: any[]) => {
-            console.error(`${this.constructor.name} Error:`, ...args);
+            console.error(`${this.constructor.name}`, ...args);
         });
     }
 }
