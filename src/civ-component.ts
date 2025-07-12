@@ -273,7 +273,7 @@ export class CivComponent extends EventEmitter {
             }
             const elemTraits: Traits = [];
             const magicAttrs: Attr[] = [];
-            if (Reflect.get(components, elem.tagName)) {
+            if (Reflect.get(components, elem.tagName.toUpperCase())) {
                 elem.classList.add(componentFlagClass);
             }
 
@@ -457,7 +457,7 @@ export class CivComponent extends EventEmitter {
             this._trackTask({
                 type: DomMaintenanceTaskType.COMPONENT_RENDER,
                 sub: el,
-                comp: el.tagName,
+                comp: el.tagName.toUpperCase(),
                 traits,
                 ns
             }, elem);

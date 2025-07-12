@@ -47,6 +47,30 @@ export function HTML(text: string) {
     };
 }
 
+export function SVG(text: string) {
+    return function <T extends ReactiveTemplateMixin>(target: T) {
+        if (typeof target !== 'function') {
+            throw new TypeError("SVG decorator is intended for classes themselves.");
+        }
+        identify(target);
+        
+        let doc: Document;
+
+        const isSnippet = !text.slice(0, 4).toLowerCase().startsWith('<svg');
+        if (isSnippet) {
+            doc = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${text}</svg>`, 'text/html');
+            const rootElement = doc.body.firstElementChild?.firstElementChild;
+            if (rootElement) {
+                doc.body.insertBefore(rootElement, doc.body.firstElementChild);
+            }
+        } else {
+            doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+        }
+
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
+    };
+}
+
 export function XHTML(text: string) {
     return function <T extends ReactiveTemplateMixin>(target: T) {
         if (typeof target !== 'function') {
@@ -111,6 +135,8 @@ export function Template(html: string | TypedString, css?: string) {
             HTML(html)(target);
         } else if (html.type === 'application/xhtml+xml') {
             XHTML(html.value)(target);
+        } else if (html.type === 'image/svg+xml') {
+            SVG(html.value)(target);
         } else {
             HTML(html.value)(target);
         }
@@ -146,6 +172,19 @@ export function xhtml(strings: TemplateStringsArray, ...values: any[]): TypedStr
     return {
         value: result,
         type: 'application/xhtml+xml'
+    };
+}
+export function svg(strings: TemplateStringsArray, ...values: any[]): TypedString {
+    let result = '';
+    for (let i = 0; i < strings.length; i++) {
+        result += strings[i];
+        if (i < values.length) {
+            result += values[i];
+        }
+    }
+    return {
+        value: result,
+        type: 'image/svg+xml'
     };
 }
 
