@@ -94,6 +94,9 @@ export class CivComponent extends EventEmitter {
         const attributes = el.attributes;
         for (let i = attributes.length - 1; i >= 0; i--) {
             const attr = attributes[i];
+            if (attr.name === 'class') {
+                continue;
+            }
             el.removeAttributeNode(attr);
             targetElement.setAttributeNode(attr);
         }
@@ -101,6 +104,10 @@ export class CivComponent extends EventEmitter {
         const clsId = identify(compCls);
         // "class" attribute could have been replaced, loosing class identifier, adding it back here
         targetElement.classList.add(clsId);
+        for (let i = 0; i < el.classList.length; i++) {
+            const cls = el.classList[i];
+            targetElement.classList.add(cls);
+        }
 
         const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
         if (defaultSlot) {
@@ -184,6 +191,30 @@ export class CivComponent extends EventEmitter {
         if (opts?.immediate) {
             cb(Reflect.get(finalRef, prop), undefined);
         }
+    }
+
+    domEmit(eventName: string, ...args: unknown[]) {
+        const event = new CustomEvent(eventName, {
+            composed: true,
+            detail: args
+        });
+        let elem: Element;
+        try {
+            // @ts-ignore
+            elem = $element;
+        } catch {
+            // $element is not defined, fallback to this.element
+            elem = this.element;
+        }
+        elem.dispatchEvent(event);
+    }
+
+    teleport(elem: Element, target = document.body, reference: Node | null = null): void {
+        if (elem.isConnected) {
+            moveFunc.call(target, elem, reference);
+            return;
+        }
+        target.insertBefore(elem, reference);
     }
 
     [Symbol.dispose]() {
@@ -859,7 +890,7 @@ export class CivComponent extends EventEmitter {
             throw new Error(`Invalid *for expression: ${task.expr} in component ${identify(this.constructor as typeof CivComponent)}`);
         }
         let equivalentIterable = initialYield.value;
-        if (!equivalentIterable) { 
+        if (!equivalentIterable) {
             it.return();
         }
         let isReactive = false;
@@ -1313,6 +1344,7 @@ export class CivComponent extends EventEmitter {
             }
             const ns = Object.create(task.ns || null);
             ns.$event = e;
+            ns.$element = task.tgt;
             const { value } = this._evaluateExpr(task.expr, ns, true);
 
             if (typeof value === 'function') {
@@ -1432,6 +1464,9 @@ export class CivComponent extends EventEmitter {
                     }
                     case DomConstructionTaskType.DETACH: {
                         const sub = con.sub;
+                        if (!sub.isConnected) {
+                            break;
+                        }
                         const rm = detachRoutine.call(this, sub, con.dispose);
                         if (!rm) {
                             break;
@@ -1547,6 +1582,9 @@ export class CivComponent extends EventEmitter {
                             }
                         }
                         for (const el of con.rest) {
+                            if (!el.isConnected) {
+                                continue;
+                            }
                             const rm = detachRoutine.call(this, el);
                             if (!rm) {
                                 continue;
