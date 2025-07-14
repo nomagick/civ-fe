@@ -112,9 +112,11 @@ export class CivComponent extends EventEmitter {
         const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
         if (defaultSlot) {
             defaultSlot.classList.add(`${clsId}__slotted`);
+            const nodes: Node[] = [];
             el.childNodes.forEach((node) => {
-                defaultSlot.appendChild(node);
+                nodes.push(node);
             });
+            el.replaceChildren(...nodes);
         }
 
         const taskSet = this._subtreeTaskTrack.get(el);
@@ -125,7 +127,7 @@ export class CivComponent extends EventEmitter {
             }
         }
 
-        const namedTemplates = el.querySelectorAll(`:scope > template[for]`);
+        const namedTemplates = el.querySelectorAll<HTMLTemplateElement>(`:scope > template[for]`);
         if (namedTemplates.length) {
             namedTemplates.forEach((el) => el.remove());
         }
@@ -140,9 +142,7 @@ export class CivComponent extends EventEmitter {
                 return;
             }
             targetSlot.classList.add(`${clsId}__slotted`);
-            template.childNodes.forEach((node) => {
-                targetSlot.appendChild(node);
-            });
+            targetSlot.replaceChildren(template.content);
         });
 
         const tsk: NodeReplaceTask = {
