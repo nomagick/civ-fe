@@ -22,8 +22,10 @@ import { perNextTick } from "./lib/tick";
 import { unwrap } from "./lib/reactive-kit";
 import { isPrimitiveLike } from "./lib/lang";
 import { CivFeError } from "./error";
+import { mixins } from "./mixins";
 
-export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin { }
+type mixins = typeof mixins;
+export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin, mixins {}
 export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
 
 const forExpRegex = /^(?<expr1>.+?)\s+(?<typ>in|of)\s+(?<expr2>.+)$/;
@@ -208,14 +210,6 @@ export class CivComponent extends EventEmitter {
             elem = this.element;
         }
         elem.dispatchEvent(event);
-    }
-
-    teleport(elem: Element, target = document.body, reference: Node | null = null): void {
-        if (elem.isConnected) {
-            moveFunc.call(target, elem, reference);
-            return;
-        }
-        target.insertBefore(elem, reference);
     }
 
     [Symbol.dispose]() {
@@ -1677,6 +1671,8 @@ export class CivComponent extends EventEmitter {
         });
     }
 }
+
+Object.assign(CivComponent.prototype, mixins);
 
 function attachRoutine(this: CivComponent, sub: Node) {
     if (sub.isConnected) {

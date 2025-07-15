@@ -1,4 +1,4 @@
-import { CivComponent, html, Reactive, Template, scss, createTransitionGroup } from 'civ-fe';
+import { CivComponent, html, Reactive, Template, scss } from 'civ-fe';
 
 import { shuffle } from 'lodash-es';
 
@@ -9,7 +9,7 @@ import { shuffle } from 'lodash-es';
   <button @click="reset">Reset</button>
   <button @click="shuffle">Shuffle</button>
 
-  <ul class="container" use:animate="transitionGroup">
+  <ul class="container" use:transition-group="createTransitionGroup($element, {leaveTo: 'leave-to', leaveFrom: 'leave-from'})">
     <li v-for="item of items" class="item">
       {{ item }}
       <button @click="remove(item)">x</button>
@@ -80,15 +80,6 @@ export class ListTransition extends CivComponent {
         if (i > -1) {
             this.items.splice(i, 1)
         }
-    }
-
-    transitionGroup(elem: HTMLElement) {
-
-        createTransitionGroup(elem, {
-            leaveTo: 'leave-to',
-            leaveFrom: 'leave-from',
-        });
-
     }
 
 }

@@ -1,10 +1,10 @@
-import { CivComponent, html, Reactive, Template, scss, createTransition, ResolveComponents } from 'civ-fe';
+import { CivComponent, html, Reactive, Template, scss, ResolveComponents } from 'civ-fe';
 
 
 
 @Template(
     html`
-<div v-if="show" class="modal-mask" use:transition="transition">
+<div v-if="show" class="modal-mask" use:transition="createTransition">
   <div class="modal-container">
     <div class="modal-header">
       <slot name="header">default header</slot>
@@ -74,10 +74,6 @@ export class Modal extends CivComponent {
 
     @Reactive
     show = false;
-
-    transition(elem: HTMLElement) {
-        createTransition(elem);
-    }
 
 }
 
