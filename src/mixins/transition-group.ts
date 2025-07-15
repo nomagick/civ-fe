@@ -28,7 +28,7 @@ export function createTransitionGroup(container: HTMLElement, config: Transition
         if (target instanceof HTMLElement && target.parentElement === container) {
             childPositions.set(target, target.getBoundingClientRect());
         }
-    }, { signal });
+    }, { signal, capture: true });
 
     // 2. LAST, INVERT, PLAY: Listen for the 'moved' event.
     container.addEventListener(movedEventName, (e) => {
@@ -47,22 +47,25 @@ export function createTransitionGroup(container: HTMLElement, config: Transition
         const scaleY = oldRect.height / newRect.height;
 
         if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return; // Skip if it didn't move
+        const styleAttributeExisted = elem.hasAttribute('style') && elem.style.cssText !== '';
         const backupTransform = elem.style.transform;
         const backupTransition = elem.style.transition;
         elem.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
-        const { transition = 'all', duration, easing } = config;
-        const transitionValue = `${transition} ${duration}ms${easing ? ` ${easing}` : ''}`;
+        const { transition = 'all 0.3s' } = config;
+        const transitionValue = Array.isArray(transition) ? transition.join(', ') : transition;
 
         // PLAY: In the next frame, add the transition and remove the transform.
         requestAnimationFrame(() => {
             elem.style.transition = backupTransition ? `${backupTransition}, ${transitionValue}` : transitionValue;
             elem.style.transform = backupTransform;
+            childPositions.delete(elem);
+            elem.addEventListener('transitionend', () => {
+                elem.style.transition = backupTransition;
+                if (!styleAttributeExisted) {
+                    elem.removeAttribute('style');
+                }
+            }, { once: true });
         });
 
-        // Cleanup the inline transition style after it finishes.
-        elem.addEventListener('transitionend', () => {
-            elem.style.transition = backupTransition;
-        }, { once: true });
-
-    }, { signal });
+    }, { signal, capture: true });
 }

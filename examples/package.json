@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "@types/lodash-es": "^4.17.12",
     "buffer": "^6.0.3",
     "events": "^3.3.0",
     "lodash-es": "^4.17.21",

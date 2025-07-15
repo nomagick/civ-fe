@@ -9,10 +9,41 @@ export interface TransitionConfig {
     leaveTo?: Partial<CSSStyleDeclaration>;   // Final styles for leave transition
     signal?: AbortSignal; // Optional signal to abort the transition
 }
+let serial = 1;
+
+const finalizationRegistry = new FinalizationRegistry((styleSheet: CSSStyleSheet) => {
+    const index = document.adoptedStyleSheets.indexOf(styleSheet);
+    if (index !== -1) {
+        document.adoptedStyleSheets.splice(index, 1);
+    }
+});
 
 export function createTransition(element: HTMLElement, config: TransitionConfig) {
     const { transition = 'all 0.3s', from, to, leaveTo = from, signal } = config;
     const transitionValue = Array.isArray(transition) ? transition.join(', ') : transition;
+    const thisSerial = serial++;
+    const fromClass = `__transition-from-${thisSerial.toString(16)}`;
+    const toClass = `__transition-to-${thisSerial.toString(16)}`;
+    const leaveToClass = `__transition-leave-to-${thisSerial.toString(16)}`;
+    const inTransitionClass = `__transition-${thisSerial.toString(16)}`;
+    const cssSource = `
+.${fromClass} {
+${Object.entries(from).filter(([, value]) => Boolean(value)).map(([key, value]) => `  ${key}: ${value};`).join('\n')}
+}
+.${toClass} {
+${Object.entries(to).filter(([, value]) => Boolean(value)).map(([key, value]) => `  ${key}: ${value};`).join('\n')}
+}
+.${leaveToClass} {
+${Object.entries(leaveTo).filter(([, value]) => Boolean(value)).map(([key, value]) => `  ${key}: ${value};`).join('\n')}
+}
+.${inTransitionClass} {
+  transition: ${transitionValue};
+}
+`;
+    const styleSheet = new CSSStyleSheet();
+    styleSheet.replaceSync(cssSource);
+    document.adoptedStyleSheets.push(styleSheet);
+    finalizationRegistry.register(element, styleSheet, signal);
 
     // --- Leave Transition ---
     const onDetach = (event: Event) => {
@@ -20,52 +51,35 @@ export function createTransition(element: HTMLElement, config: TransitionConfig)
             return;
         }
         event.preventDefault();
-        const backup: Partial<CSSStyleDeclaration> = {
-            transition: element.style.transition,
-        };
-        for (const key in to) {
-            backup[key] = element.style[key];
-        }
-        for (const key in leaveTo) {
-            backup[key] = element.style[key];
-        }
 
-        Object.assign(element.style, to);
+        element.classList.add(toClass);
+        element.classList.add(inTransitionClass);
         requestAnimationFrame(() => {
-            Object.assign(element.style, leaveTo);
-            element.style.transition = backup.transition ? `${backup.transition}, ${transitionValue}` : transitionValue;
+            element.classList.add(leaveToClass);
+            element.addEventListener('transitionend', () => {
+                element.classList.remove(inTransitionClass, toClass, leaveToClass, fromClass);
+                element.remove();
+            }, { once: true });
         });
 
-        element.addEventListener('transitionend', () => {
-            Object.assign(element.style, backup);
-            element.remove();
-        }, { once: true });
     };
 
     const onAttach = (event: Event) => {
         if (event.target !== element) {
             return;
         }
-        const backup: Partial<CSSStyleDeclaration> = {
-            transition: element.style.transition,
-        };
-        for (const key in from) {
-            backup[key] = element.style[key];
-        }
-        for (const key in to) {
-            backup[key] = element.style[key];
-        }
-        Object.assign(element.style, from);
 
+        element.classList.add(fromClass);
+        element.classList.add(inTransitionClass);
         requestAnimationFrame(() => {
-            Object.assign(element.style, to);
-            element.style.transition = backup.transition ? `${backup.transition}, ${transitionValue}` : transitionValue;
+            element.classList.add(toClass);
+            element.classList.remove(fromClass);
+            element.addEventListener('transitionend', () => {
+                element.classList.remove(inTransitionClass);
+            }, { once: true });
         });
-
-        element.addEventListener('transitionend', () => {
-            Object.assign(element.style, backup);
-        }, { once: true });
     };
+
     element.addEventListener(attachedEventName, onAttach, { signal });
     setImmediate(() => {
         element.addEventListener(detachEventName, onDetach, { signal });
