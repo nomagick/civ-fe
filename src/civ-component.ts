@@ -1483,12 +1483,9 @@ export class CivComponent extends EventEmitter {
                         const [parent, start, end] = con.anchor;
 
                         let anchorNode: Node | null = start.nextSibling;
-                        const previousSnapshot = [];
-                        while (anchorNode && anchorNode !== end) {
-                            previousSnapshot.push(anchorNode);
-                            anchorNode = anchorNode.nextSibling;
-                        }
-                        anchorNode = start.nextSibling;
+                        const nodeOffsetSnapshot = new Map<Node | null, number>();
+                        let offset = 0;
+                        nodeOffsetSnapshot.set(start, offset++);
 
                         const insertionActionPoints: [Node, Node | null, boolean, boolean][] = [];
                         const arrangedNodes = new WeakSet<Node>();
@@ -1505,8 +1502,10 @@ export class CivComponent extends EventEmitter {
                                     moveRoutine.call(this, el);
                                 }
                                 anchorNode = el.nextSibling;
+                                nodeOffsetSnapshot.set(anchorNode, offset++);
                                 while (anchorNode && arrangedNodes.has(anchorNode)) {
                                     anchorNode = anchorNode.nextSibling;
+                                    nodeOffsetSnapshot.set(anchorNode, offset++);
                                 }
                                 continue;
                             }
@@ -1535,7 +1534,12 @@ export class CivComponent extends EventEmitter {
                             parent.insertBefore(node, anchor);
                         }
 
-                        const lingeringNodes = [];
+                        const childNodes = parent.childNodes;
+                        let i = 0;
+                        while (childNodes[i] && childNodes[i] !== start) {
+                            i++;
+                        }
+                        const baseOffset = i + 1;
                         if (anchorNode !== end) {
                             let itNode: Node | undefined | null = anchorNode;
                             while (itNode) {
@@ -1545,8 +1549,14 @@ export class CivComponent extends EventEmitter {
                                 const thisNode: Node = itNode;
                                 const rm = detachRoutine.call(this, thisNode, true);
                                 itNode = thisNode.nextSibling;
+                                nodeOffsetSnapshot.set(itNode, offset++);
                                 if (!rm) {
-                                    lingeringNodes.push(thisNode);
+                                    // Moving the lingering nodes back to their original positions
+                                    // Otherwise they are always at the bottom of the list, breaking animation/transition
+                                    const thisOffset = nodeOffsetSnapshot.get(thisNode);
+                                    if (thisOffset) {
+                                        parent.insertBefore(thisNode, childNodes[baseOffset + thisOffset] || null);
+                                    }
                                     continue;
                                 }
                                 if (thisNode instanceof Element) {
@@ -1554,25 +1564,6 @@ export class CivComponent extends EventEmitter {
                                 } else {
                                     thisNode.parentElement?.removeChild(thisNode);
                                 }
-                            }
-                        }
-
-                        // Moving the lingering nodes back to their original positions
-                        // Otherwise they are always at the bottom of the list, breaking animation/transition
-                        if (lingeringNodes.length) {
-                            const childNodes = parent.childNodes;
-                            let i = 0;
-                            while (childNodes[i] && childNodes[i] !== start) {
-                                i++;
-                            }
-                            const offset = i + 1;
-
-                            for (const node of lingeringNodes) {
-                                const n = previousSnapshot.indexOf(node);
-                                if (n < 0) {
-                                    continue;
-                                }
-                                parent.insertBefore(node, childNodes[offset + n] || null);
                             }
                         }
 

@@ -1,5 +1,5 @@
 
-import { attachedEventName, detachEventName, moveEventName, movedEventName } from "../protocol";
+import { attachedEventName, moveEventName, movedEventName } from "../protocol";
 import { TransitionConfig, createTransition } from "./transition";
 
 /**
