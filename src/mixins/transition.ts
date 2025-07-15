@@ -1,49 +1,25 @@
 
-import { setImmediate } from "lib/lang";
+import { setImmediate } from "../lib/lang";
 import { attachedEventName, detachEventName } from "../protocol";
 
 export interface TransitionConfig {
-    transition?: string | string[]; // Optional CSS transition property, e.g., 'all'
-    from: Partial<CSSStyleDeclaration>; // Initial styles
-    to: Partial<CSSStyleDeclaration>;   // Final styles for enter transition
-    leaveTo?: Partial<CSSStyleDeclaration>;   // Final styles for leave transition
-    signal?: AbortSignal; // Optional signal to abort the transition
+    transition?: string;
+    enterFrom?: string;
+    enterTo?: string;
+    leaveFrom?: string;
+    leaveTo?: string;
+    signal?: AbortSignal;
 }
-let serial = 1;
 
-const finalizationRegistry = new FinalizationRegistry((styleSheet: CSSStyleSheet) => {
-    const index = document.adoptedStyleSheets.indexOf(styleSheet);
-    if (index !== -1) {
-        document.adoptedStyleSheets.splice(index, 1);
-    }
-});
-
-export function createTransition(element: HTMLElement, config: TransitionConfig) {
-    const { transition = 'all 0.3s', from, to, leaveTo = from, signal } = config;
-    const transitionValue = Array.isArray(transition) ? transition.join(', ') : transition;
-    const thisSerial = serial++;
-    const fromClass = `__transition-from-${thisSerial.toString(16)}`;
-    const toClass = `__transition-to-${thisSerial.toString(16)}`;
-    const leaveToClass = `__transition-leave-to-${thisSerial.toString(16)}`;
-    const inTransitionClass = `__transition-${thisSerial.toString(16)}`;
-    const cssSource = `
-.${fromClass} {
-${Object.entries(from).filter(([, value]) => Boolean(value)).map(([key, value]) => `  ${key}: ${value};`).join('\n')}
-}
-.${toClass} {
-${Object.entries(to).filter(([, value]) => Boolean(value)).map(([key, value]) => `  ${key}: ${value};`).join('\n')}
-}
-.${leaveToClass} {
-${Object.entries(leaveTo).filter(([, value]) => Boolean(value)).map(([key, value]) => `  ${key}: ${value};`).join('\n')}
-}
-.${inTransitionClass} {
-  transition: ${transitionValue};
-}
-`;
-    const styleSheet = new CSSStyleSheet();
-    styleSheet.replaceSync(cssSource);
-    document.adoptedStyleSheets.push(styleSheet);
-    finalizationRegistry.register(element, styleSheet, signal);
+export function createTransition(element: HTMLElement, config: TransitionConfig = {}) {
+    const {
+        transition = 'in-transition',
+        enterFrom = 'enter-from',
+        enterTo,
+        leaveFrom = enterTo,
+        leaveTo = enterFrom,
+        signal
+    } = config;
 
     // --- Leave Transition ---
     const onDetach = (event: Event) => {
@@ -52,14 +28,45 @@ ${Object.entries(leaveTo).filter(([, value]) => Boolean(value)).map(([key, value
         }
         event.preventDefault();
 
-        element.classList.add(toClass);
-        element.classList.add(inTransitionClass);
+        if (leaveFrom) {
+            element.classList.add(leaveFrom);
+        }
         requestAnimationFrame(() => {
-            element.classList.add(leaveToClass);
-            element.addEventListener('transitionend', () => {
-                element.classList.remove(inTransitionClass, toClass, leaveToClass, fromClass);
+            if (transition) {
+                element.classList.add(transition);
+            }
+            if (leaveFrom) {
+                element.classList.remove(leaveFrom);
+            }
+            element.classList.add(leaveTo);
+
+            const cctrl = new AbortController();
+            let timeout: ReturnType<typeof setTimeout> | null = null;
+            const hdl = () => {
+                element.classList.remove(leaveTo);
+                if (transition) {
+                    element.classList.remove(transition);
+                }
+                
+                if (element.classList.length === 0) {
+                    element.removeAttribute('class');
+                }
                 element.remove();
-            }, { once: true });
+                if (timeout) {
+                    clearTimeout(timeout);
+                    timeout = null;
+                }
+                cctrl.abort();
+            };
+            timeout = setTimeout(hdl, 80);
+            element.addEventListener('transitionend', hdl, { once: true, signal: cctrl.signal });
+            element.addEventListener('transitioncancel', hdl, { once: true, signal: cctrl.signal });
+            element.addEventListener('transitionstart', () => {
+                if (timeout) {
+                    clearTimeout(timeout);
+                    timeout = null;
+                }
+            }, { once: true, signal: cctrl.signal });
         });
 
     };
@@ -69,14 +76,43 @@ ${Object.entries(leaveTo).filter(([, value]) => Boolean(value)).map(([key, value
             return;
         }
 
-        element.classList.add(fromClass);
-        element.classList.add(inTransitionClass);
+        element.classList.add(enterFrom);
         requestAnimationFrame(() => {
-            element.classList.add(toClass);
-            element.classList.remove(fromClass);
-            element.addEventListener('transitionend', () => {
-                element.classList.remove(inTransitionClass);
-            }, { once: true });
+            if (transition) {
+                element.classList.add(transition);
+            }
+            if (enterTo) {
+                element.classList.add(enterTo);
+            }
+            element.classList.remove(enterFrom);
+
+            const cctrl = new AbortController();
+            let timeout: ReturnType<typeof setTimeout> | null = null;
+            const hdl = () => {
+                if (transition) {
+                    element.classList.remove(transition);
+                }
+                if (enterTo) {
+                    element.classList.remove(enterTo);
+                }
+                if (element.classList.length === 0) {
+                    element.removeAttribute('class');
+                }
+                if (timeout) {
+                    clearTimeout(timeout);
+                    timeout = null;
+                }
+                cctrl.abort();
+            };
+            timeout = setTimeout(hdl, 80);
+            element.addEventListener('transitionend', hdl, { once: true, signal: cctrl.signal });
+            element.addEventListener('transitioncancel', hdl, { once: true, signal: cctrl.signal });
+            element.addEventListener('transitionstart', () => {
+                if (timeout) {
+                    clearTimeout(timeout);
+                    timeout = null;
+                }
+            }, { once: true, signal: cctrl.signal });
         });
     };
 

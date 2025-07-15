@@ -31,6 +31,24 @@ import { shuffle } from 'lodash-es';
         border: 1px solid #666;
         box-sizing: border-box;
     }
+    /* 1. declare transition */
+    .in-transition {
+        transition: all 0.5s cubic-bezier(0.55, 0, 0.1, 1);
+    }
+
+    /* 2. declare enter from and leave to state */
+    .enter-from,
+    .leave-to {
+        opacity: 0;
+        transform: scaleY(0.01) translate(30px, 0);
+    }
+
+    /* 3. ensure leaving items are taken out of layout flow so that moving
+        animations can be calculated correctly. */
+    .leave-from,
+    .leave-to {
+        position: absolute;
+    }
 }
 `)
 export class ListTransition extends CivComponent {
@@ -38,14 +56,17 @@ export class ListTransition extends CivComponent {
     @Reactive
     items = [1, 2, 3, 4, 5];
 
+    id = this.items.length;
+
     insert() {
         const i = Math.round(Math.random() * this.items.length)
-        this.items.splice(i, 0, this.items.length + 1)
+        this.items.splice(i, 0, ++this.id)
     }
 
     reset() {
         this.items.length = 0; // clear the array
         this.items.push(...[1, 2, 3, 4, 5]);
+        this.id = this.items.length;
     }
 
     shuffle() {
@@ -64,21 +85,9 @@ export class ListTransition extends CivComponent {
     transitionGroup(elem: HTMLElement) {
 
         createTransitionGroup(elem, {
-            transition: 'all 0.5s cubic-bezier(0.55, 0, 0.1, 1)',
-            from: {
-                opacity: '0',
-                transform: 'scaleY(0.01) translate(30px, 0)'
-            },
-            to: {
-                opacity: '1',
-                transform: ''
-            },
-            leaveTo: {
-                opacity: '0',
-                transform: 'scaleY(0.01) translate(30px, 0)',
-                position: 'absolute',
-            }
-        })
+            leaveTo: 'leave-to',
+            leaveFrom: 'leave-from',
+        });
 
     }
 

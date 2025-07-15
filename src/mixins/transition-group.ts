@@ -1,5 +1,5 @@
 
-import { attachedEventName, moveEventName, movedEventName } from "../protocol";
+import { attachedEventName, detachEventName, moveEventName, movedEventName } from "../protocol";
 import { TransitionConfig, createTransition } from "./transition";
 
 /**
@@ -28,7 +28,7 @@ export function createTransitionGroup(container: HTMLElement, config: Transition
         if (target instanceof HTMLElement && target.parentElement === container) {
             childPositions.set(target, target.getBoundingClientRect());
         }
-    }, { signal, capture: true });
+    }, { signal });
 
     // 2. LAST, INVERT, PLAY: Listen for the 'moved' event.
     container.addEventListener(movedEventName, (e) => {
@@ -47,25 +47,46 @@ export function createTransitionGroup(container: HTMLElement, config: Transition
         const scaleY = oldRect.height / newRect.height;
 
         if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return; // Skip if it didn't move
-        const styleAttributeExisted = elem.hasAttribute('style') && elem.style.cssText !== '';
         const backupTransform = elem.style.transform;
-        const backupTransition = elem.style.transition;
         elem.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
-        const { transition = 'all 0.3s' } = config;
-        const transitionValue = Array.isArray(transition) ? transition.join(', ') : transition;
+        const { transition = 'in-transition' } = config;
 
         // PLAY: In the next frame, add the transition and remove the transform.
         requestAnimationFrame(() => {
-            elem.style.transition = backupTransition ? `${backupTransition}, ${transitionValue}` : transitionValue;
             elem.style.transform = backupTransform;
-            childPositions.delete(elem);
-            elem.addEventListener('transitionend', () => {
-                elem.style.transition = backupTransition;
-                if (!styleAttributeExisted) {
+            if (transition) {
+                elem.classList.add(transition);
+            }
+
+            const cctrl = new AbortController();
+            let timeout: ReturnType<typeof setTimeout> | null = null;
+            const hdl = () => {
+                if (transition) {
+                    elem.classList.remove(transition);
+                }
+                if (elem.classList.length === 0) {
+                    elem.removeAttribute('class');
+                }
+
+                if (!elem.style.cssText) {
                     elem.removeAttribute('style');
                 }
-            }, { once: true });
+                if (timeout) {
+                    clearTimeout(timeout);
+                    timeout = null;
+                }
+                cctrl.abort();
+            }
+            timeout = setTimeout(hdl, 80);
+            elem.addEventListener('transitionend', hdl, { once: true, signal: cctrl.signal });
+            elem.addEventListener('transitioncancel', hdl, { once: true, signal: cctrl.signal });
+            elem.addEventListener('transitionstart', () => {
+                if (timeout) {
+                    clearTimeout(timeout);
+                    timeout = null;
+                }
+            }, { once: true, signal: cctrl.signal });
         });
 
-    }, { signal, capture: true });
+    }, { signal });
 }

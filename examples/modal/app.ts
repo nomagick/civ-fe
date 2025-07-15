@@ -60,28 +60,23 @@ import { CivComponent, html, Reactive, Template, scss, createTransition, Resolve
         float: right;
     }
 
-}
-`)
+    &.enter-from {
+        opacity: 0;
+    }
+
+    &.enter-from .modal-container,
+    &.leave-to .modal-container {
+        -webkit-transform: scale(1.1);
+        transform: scale(1.1);
+    }
+}`)
 export class Modal extends CivComponent {
 
     @Reactive
     show = false;
 
     transition(elem: HTMLElement) {
-        createTransition(elem, {
-            transition: [
-                'opacity 300ms ease',
-                'transform 300ms ease'
-            ],
-            from: {
-                opacity: '0',
-                transform: 'scale(1.1)'
-            },
-            to: {
-                opacity: '1',
-                transform: '',
-            },
-        });
+        createTransition(elem);
     }
 
 }

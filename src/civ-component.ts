@@ -196,7 +196,8 @@ export class CivComponent extends EventEmitter {
     domEmit(eventName: string, ...args: unknown[]) {
         const event = new CustomEvent(eventName, {
             composed: true,
-            detail: args
+            detail: args,
+            bubbles: true,
         });
         let elem: Element;
         try {
@@ -1482,6 +1483,12 @@ export class CivComponent extends EventEmitter {
                         const [parent, start, end] = con.anchor;
 
                         let anchorNode: Node | null = start.nextSibling;
+                        const previousSnapshot = [];
+                        while (anchorNode && anchorNode !== end) {
+                            previousSnapshot.push(anchorNode);
+                            anchorNode = anchorNode.nextSibling;
+                        }
+                        anchorNode = start.nextSibling;
 
                         const insertionActionPoints: [Node, Node | null, boolean, boolean][] = [];
                         const arrangedNodes = new WeakSet<Node>();
@@ -1528,6 +1535,7 @@ export class CivComponent extends EventEmitter {
                             parent.insertBefore(node, anchor);
                         }
 
+                        const lingeringNodes = [];
                         if (anchorNode !== end) {
                             let itNode: Node | undefined | null = anchorNode;
                             while (itNode) {
@@ -1538,6 +1546,7 @@ export class CivComponent extends EventEmitter {
                                 const rm = detachRoutine.call(this, thisNode, true);
                                 itNode = thisNode.nextSibling;
                                 if (!rm) {
+                                    lingeringNodes.push(thisNode);
                                     continue;
                                 }
                                 if (thisNode instanceof Element) {
@@ -1545,6 +1554,25 @@ export class CivComponent extends EventEmitter {
                                 } else {
                                     thisNode.parentElement?.removeChild(thisNode);
                                 }
+                            }
+                        }
+
+                        // Moving the lingering nodes back to their original positions
+                        // Otherwise they are always at the bottom of the list, breaking animation/transition
+                        if (lingeringNodes.length) {
+                            const childNodes = parent.childNodes;
+                            let i = 0;
+                            while (childNodes[i] && childNodes[i] !== start) {
+                                i++;
+                            }
+                            const offset = i + 1;
+
+                            for (const node of lingeringNodes) {
+                                const n = previousSnapshot.indexOf(node);
+                                if (n < 0) {
+                                    continue;
+                                }
+                                parent.insertBefore(node, childNodes[offset + n] || null);
                             }
                         }
 
@@ -1662,7 +1690,8 @@ export class CivComponent extends EventEmitter {
 function attachRoutine(this: CivComponent, sub: Node) {
     if (sub.isConnected) {
         const event = new CustomEvent(attachedEventName, {
-            detail: { component: this }
+            detail: { component: this },
+            bubbles: true,
         });
         sub.dispatchEvent(event);
         if (sub instanceof Element) {
@@ -1684,7 +1713,8 @@ function attachRoutine(this: CivComponent, sub: Node) {
 function moveRoutine(this: CivComponent, sub: Node) {
     if (sub.isConnected) {
         const event = new CustomEvent(moveEventName, {
-            detail: { component: this }
+            detail: { component: this },
+            bubbles: true,
         });
         sub.dispatchEvent(event);
     }
@@ -1692,7 +1722,8 @@ function moveRoutine(this: CivComponent, sub: Node) {
 function movedRoutine(this: CivComponent, sub: Node, isRealMove: boolean = true) {
     if (sub.isConnected) {
         const event = new CustomEvent(movedEventName, {
-            detail: { component: this }
+            detail: { component: this },
+            bubbles: true,
         });
         sub.dispatchEvent(event);
         if (sub instanceof Element) {
@@ -1710,7 +1741,8 @@ function movedRoutine(this: CivComponent, sub: Node, isRealMove: boolean = true)
 function detachRoutine(this: CivComponent, sub: Node, dispose?: boolean) {
     const event = new CustomEvent(detachEventName, {
         detail: { component: this },
-        cancelable: true
+        cancelable: true,
+        bubbles: true,
     });
     const continueRemoving = sub.dispatchEvent(event);
     if (dispose) {
