@@ -1549,7 +1549,7 @@ export class CivComponent extends EventEmitter {
                                     // Otherwise they are always at the bottom of the list, breaking animation/transition
                                     const thisOffset = nodeOffsetSnapshot.get(thisNode);
                                     if (thisOffset) {
-                                        parent.insertBefore(thisNode, childNodes[baseOffset + thisOffset] || null);
+                                        parent.insertBefore(thisNode, childNodes[baseOffset + thisOffset] || end);
                                     }
                                     continue;
                                 }
