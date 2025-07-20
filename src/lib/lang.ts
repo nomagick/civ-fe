@@ -300,6 +300,7 @@ export const setImmediate = (function setImmediateFactory() {
         for (const x of callbacks) {
             x.call(globalThis);
         }
+        window.dispatchEvent(new CustomEvent('tick'));
         callbacks.length = 0;
     };
 

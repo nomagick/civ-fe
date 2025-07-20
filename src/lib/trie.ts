@@ -1,3 +1,6 @@
+const neverArr = [] as never[];
+Object.freeze(neverArr);
+
 export class TrieNode<T = unknown, D = unknown> {
     key: T;
     parent: TrieNode<T, D> | null = null;
@@ -64,12 +67,13 @@ export class TrieNode<T = unknown, D = unknown> {
         return true;
     }
 
-    seek(...series: T[]): { found: true; ptr: TrieNode<T, D>; payload?: D } | { found: false; ptr: TrieNode<T, D>; deviation: T[] } {
+    seek(...series: T[]): { found: true; ptr: TrieNode<T, D>; payload?: D, deviation: never[] } | { found: false; ptr: TrieNode<T, D>; deviation: T[] } {
         if (series.length === 0) {
             return {
                 found: true,
                 ptr: this,
-                payload: this.payload
+                payload: this.payload,
+                deviation: neverArr
             };
         }
 
