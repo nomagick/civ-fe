@@ -49,6 +49,32 @@ export abstract class CivRouter extends CivComponent {
             const targetUrl = new URL(window.location.href);
             this.goto(targetUrl, !ev.hasUAVisualTransition);
         });
+
+        const abortController = new AbortController();
+        this._revokers ??= new Set();
+        this._revokers.add(abortController);
+        document.addEventListener('click', (ev) => {
+            const target = ev.target as HTMLAnchorElement;
+            if (target.tagName !== 'A') {
+                return;
+            }
+            // don't redirect with control keys
+            if (ev.metaKey || ev.altKey || ev.ctrlKey || ev.shiftKey) return;
+            // don't redirect when preventDefault called
+            if (ev.defaultPrevented) return;
+            // don't redirect on right click
+            if (ev.button !== undefined && ev.button !== 0) return;
+
+            if (!target.href || target.target !== '_self' || target.download || target.rel) {
+                return;
+            }
+            const parsed = new URL(target.href, window.location.href);
+            if (parsed.origin !== window.location.origin) {
+                return;
+            }
+            ev.preventDefault();
+            this.goto(parsed);
+        }, { signal: abortController.signal });
     }
 
     @runOncePerInstance
