@@ -49,7 +49,7 @@ import { CivComponent, Reactive, Template, css, html } from 'civ-fe';
     <p>Selected: {{ multiSelected }}</p>
 </div>
 `)
-export class FormBindings extends CivComponent {
+export default class FormBindings extends CivComponent {
 
     @Reactive
     text = 'Edit me';
@@ -65,5 +65,3 @@ export class FormBindings extends CivComponent {
     multiSelected = ['A'];
 
 }
-
-new FormBindings().replaceElement(document.getElementById('app')!);

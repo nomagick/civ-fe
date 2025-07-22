@@ -42,7 +42,7 @@ body {
     }
 }
 `)
-export class Markdown extends CivComponent {
+export default class Markdown extends CivComponent {
 
     @Reactive
     input: string = '# hello';
@@ -60,5 +60,3 @@ export class Markdown extends CivComponent {
         this.input = (ev.target as HTMLTextAreaElement).value;
     }
 }
-
-new Markdown().replaceElement(document.getElementById('app')!);

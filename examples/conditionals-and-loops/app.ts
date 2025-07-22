@@ -14,7 +14,7 @@ import { CivComponent, Reactive, Template, css, html } from 'civ-fe';
     <p v-else>List is empty.</p>
 </div>
 `)
-export class ConditionalsAndLoops extends CivComponent {
+export default class ConditionalsAndLoops extends CivComponent {
 
     @Reactive
     show: boolean = true;
@@ -22,5 +22,3 @@ export class ConditionalsAndLoops extends CivComponent {
     list = [1, 2, 3];
 
 }
-
-new ConditionalsAndLoops().replaceElement(document.getElementById('app')!);

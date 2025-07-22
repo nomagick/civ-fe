@@ -24,7 +24,7 @@ import { CivComponent, Reactive, Template, css, html } from 'civ-fe';
   color: red;
 }
 `)
-export class AttributeBindings extends CivComponent {
+export default class AttributeBindings extends CivComponent {
 
     @Reactive
     message: string = 'Hello World!';
@@ -41,5 +41,3 @@ export class AttributeBindings extends CivComponent {
         this.color = this.color === 'green' ? 'blue' : 'green'
     }
 }
-
-new AttributeBindings().replaceElement(document.getElementById('app')!);

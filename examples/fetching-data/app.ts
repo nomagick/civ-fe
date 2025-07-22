@@ -41,7 +41,7 @@ const API_URL = `https://api.github.com/repos/nomagick/civ-fe/commits?per_page=3
     }
 }
 `)
-export class FetchingData extends CivComponent {
+export default class FetchingData extends CivComponent {
 
     branches = ['main', 'release']
 
@@ -76,5 +76,3 @@ export class FetchingData extends CivComponent {
     }
 
 }
-
-new FetchingData().replaceElement(document.getElementById('app')!);

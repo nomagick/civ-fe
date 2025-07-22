@@ -37,7 +37,7 @@ const todoList = getReactiveStorage<TodoItem[]>('todoList', []);
     </div>
 </div>`
 )
-export class SimpleTodo extends CivComponent {
+export default class SimpleTodo extends CivComponent {
 
     @Reactive
     title = '';
@@ -71,4 +71,4 @@ export class SimpleTodo extends CivComponent {
     }
 }
 
-new SimpleTodo().replaceElement(document.getElementById('app')!);
+

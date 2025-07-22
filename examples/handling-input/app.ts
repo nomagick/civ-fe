@@ -29,7 +29,7 @@ import { CivComponent, Reactive, Template, css, html } from 'civ-fe';
   margin-bottom: 1em;
 }
 `)
-export class HandlingInput extends CivComponent {
+export default class HandlingInput extends CivComponent {
 
     @Reactive
     message: string = 'Hello World';
@@ -43,5 +43,3 @@ export class HandlingInput extends CivComponent {
         alert('navigation was prevented.')
     }
 }
-
-new HandlingInput().replaceElement(document.getElementById('app')!);

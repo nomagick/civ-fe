@@ -51,7 +51,7 @@ import { shuffle } from 'lodash-es';
     }
 }
 `)
-export class ListTransition extends CivComponent {
+export default class ListTransition extends CivComponent {
 
     @Reactive
     items = [1, 2, 3, 4, 5];
@@ -83,6 +83,3 @@ export class ListTransition extends CivComponent {
     }
 
 }
-
-
-new ListTransition().replaceElement(document.getElementById('app')!);

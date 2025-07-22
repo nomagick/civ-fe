@@ -146,7 +146,7 @@ export class Grid extends CivComponent {
     </DemoGrid>
 </div>`
 )
-export class GridApp extends CivComponent {
+export default class GridApp extends CivComponent {
 
     @Reactive
     searchQuery: string = '';
@@ -161,5 +161,3 @@ export class GridApp extends CivComponent {
     ];
 
 }
-
-new GridApp().replaceElement(document.getElementById('app')!);

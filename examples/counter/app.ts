@@ -8,7 +8,7 @@ import { CivComponent, css, html, Reactive, Template } from 'civ-fe';
         font-size: 2rem;
     }`
 )
-export class Counter extends CivComponent {
+export default class Counter extends CivComponent {
 
     @Reactive
     count = 0;
@@ -29,5 +29,3 @@ export class Counter extends CivComponent {
         }
     }
 }
-
-new Counter().replaceElement(document.getElementById('app')!);

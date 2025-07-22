@@ -16,7 +16,7 @@ export class TodoItem extends CivComponent {
     <TodoItem v-for="item of groceryList" prop:todo="item" />
 </ol>
 `)
-export class SimpleComponent extends CivComponent {
+export default class SimpleComponent extends CivComponent {
 
     @Reactive
     groceryList = [
@@ -26,5 +26,3 @@ export class SimpleComponent extends CivComponent {
     ];
 
 }
-
-new SimpleComponent().replaceElement(document.getElementById('app')!);

@@ -60,7 +60,7 @@ input {
 .error-input {
   box-shadow: 0px 0px 2px 1px red;
 }`)
-export class Forms extends CivComponent {
+export default class Forms extends CivComponent {
 
     @Reactive
     title = '';
@@ -164,6 +164,3 @@ export class Forms extends CivComponent {
     }
 
 }
-
-new Forms().replaceElement(document.getElementById('app')!);
-

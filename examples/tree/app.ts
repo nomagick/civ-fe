@@ -79,7 +79,7 @@ scss`
     font-weight: bold;
 }
 `)
-export class TreeApp extends CivComponent {
+export default class TreeApp extends CivComponent {
 
     @Reactive
     treeData: object = {
@@ -106,5 +106,3 @@ export class TreeApp extends CivComponent {
     };
 
 }
-
-new TreeApp().replaceElement(document.getElementById('app')!);

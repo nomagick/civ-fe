@@ -13,8 +13,10 @@
 
     </head>
     <body>
-        <h1 id="app">Hello {{message}}</h1>
-
-        <script type="module" src="./app.ts"></script>
+        <div id="app"></div>
+        <script type="module">
+            import HelloWorld from './app.ts';
+            new HelloWorld().replaceElement(document.getElementById('app'));
+        </script>
     </body>
 </html>

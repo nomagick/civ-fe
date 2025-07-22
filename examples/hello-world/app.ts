@@ -1,7 +1,7 @@
 import { CivComponent, Reactive, Template } from 'civ-fe';
 
-@Template(document.getElementById('app')!.outerHTML, `#app {color: red;}`)
-export class HelloWorld extends CivComponent {
+@Template(`<h1 id="app">Hello {{message}}</h1>`, `#app {color: red;}`)
+export default class HelloWorld extends CivComponent {
 
     @Reactive()
     message: string = 'World';
@@ -19,5 +19,3 @@ export class HelloWorld extends CivComponent {
         }
     }
 }
-
-new HelloWorld().replaceElement(document.getElementById('app')!);

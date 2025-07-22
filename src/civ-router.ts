@@ -1,7 +1,8 @@
 import { TrieRouter } from './lib/trie-router';
 import { CivComponent } from './civ-component';
 import { runOncePerInstance } from './lib/once';
-import { DomConstructionTaskType, NodeGroupToggleTask } from 'dom';
+import { DomConstructionTaskType, NodeGroupToggleTask } from './dom';
+import { setImmediate } from 'lib/lang';
 
 let serial = 0;
 
@@ -15,7 +16,6 @@ type ComponentType = (typeof CivComponent | CivComponent) | CustomRouteFunction 
 export interface RouterState {
     __type: 'routerState';
     path: string;
-    params: URLSearchParams;
     [key: string]: unknown;
 }
 
@@ -45,14 +45,16 @@ export abstract class CivRouter extends CivComponent {
         this.anchor = document.createComment(`===> Civ Router Anchor ${serial++} <===`);
         this.element.appendChild(this.anchor);
 
-        window.addEventListener('popstate', (ev) => {
-            const targetUrl = new URL(window.location.href);
-            this.goto(targetUrl, !ev.hasUAVisualTransition);
-        });
-
         const abortController = new AbortController();
         this._revokers ??= new Set();
         this._revokers.add(abortController);
+
+        window.addEventListener('popstate', (ev) => {
+            const targetUrl = new URL(window.location.href);
+            if (ev.state && ev.state.__type === 'routerState') {
+                this.goto(targetUrl, !ev.hasUAVisualTransition);
+            }
+        }, { signal: abortController.signal });
         document.addEventListener('click', (ev) => {
             const target = ev.target as HTMLAnchorElement;
             if (target.tagName !== 'A') {
@@ -65,7 +67,7 @@ export abstract class CivRouter extends CivComponent {
             // don't redirect on right click
             if (ev.button !== undefined && ev.button !== 0) return;
 
-            if (!target.href || target.target !== '_self' || target.download || target.rel) {
+            if (!target.href || target.target || target.download || target.rel) {
                 return;
             }
             const parsed = new URL(target.href, window.location.href);
@@ -75,6 +77,11 @@ export abstract class CivRouter extends CivComponent {
             ev.preventDefault();
             this.goto(parsed);
         }, { signal: abortController.signal });
+
+        setImmediate(()=> {
+            this._register();
+            this.goto(window.location.href, false);
+        });
     }
 
     @runOncePerInstance
@@ -84,7 +91,7 @@ export abstract class CivRouter extends CivComponent {
         }
     }
 
-    async goto(path: string | URL, overrideTransition?: boolean) {
+    protected prepareGoto(path: string | URL) {
         const targetUrl = typeof path === 'string' ? new URL(path, window.location.href) : path;
         if (targetUrl.origin !== window.location.origin) {
             throw new Error(`Cannot navigate to a different origin: ${targetUrl.origin}`);
@@ -125,6 +132,7 @@ export abstract class CivRouter extends CivComponent {
                 rest,
             }
             this._setConstruction(task, task);
+            this._digestTasks();
 
             return new Promise<void>((resolve, _reject) => {
                 window.addEventListener('tick', () => {
@@ -151,7 +159,53 @@ export abstract class CivRouter extends CivComponent {
             };
         }
 
-        const transition = overrideTransition ?? this.current.route.transition;
+        return {
+            targetUrl,
+            renderComp,
+            loadProcedure,
+            previousCurrent,
+        }
+    }
+
+    async replaceGoto(path: string | URL, overrideTransition?: boolean) {
+        const { targetUrl, renderComp, loadProcedure } = this.prepareGoto(path);
+        const transition = overrideTransition ?? this.current!.route.transition;
+
+        if ('startViewTransition' in document && transition !== false) {
+            document.startViewTransition(async () => {
+                try {
+                    const component = await loadProcedure();
+
+                    await renderComp(component);
+                    history.replaceState({
+                        __type: 'routerState',
+                        path: this.current!.route.path,
+                    }, '', targetUrl);
+                } catch (err) {
+                    console.error('Error loading component:', err);
+                    throw err;
+                }
+            });
+            return;
+        }
+
+        try {
+            const component = await loadProcedure();
+
+            await renderComp(component);
+            history.replaceState({
+                __type: 'routerState',
+                path: this.current!.route.path,
+            }, '', targetUrl);
+        } catch (err) {
+            console.error('Error loading component:', err);
+            throw err;
+        }
+    }
+
+    async goto(path: string | URL, overrideTransition?: boolean) {
+        const { targetUrl, renderComp, loadProcedure } = this.prepareGoto(path);
+        const transition = overrideTransition ?? this.current!.route.transition;
 
         if ('startViewTransition' in document && transition !== false) {
             document.startViewTransition(async () => {
@@ -161,7 +215,6 @@ export abstract class CivRouter extends CivComponent {
                     await renderComp(component);
                     history.pushState({
                         __type: 'routerState',
-                        params: this.current!.searchParams,
                         path: this.current!.route.path,
                     }, '', targetUrl);
                 } catch (err) {
@@ -178,7 +231,6 @@ export abstract class CivRouter extends CivComponent {
             await renderComp(component);
             history.pushState({
                 __type: 'routerState',
-                params: this.current!.searchParams,
                 path: this.current!.route.path,
             }, '', targetUrl);
         } catch (err) {

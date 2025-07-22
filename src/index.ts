@@ -16,6 +16,7 @@ export * from "./lib/defer";
 export * from "./lib/max-concurrency";
 export * from "./lib/retry";
 export * from "./lib/throttle";
+export * from "./civ-router";
 
 
 export default CivComponent;

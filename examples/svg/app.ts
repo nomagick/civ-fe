@@ -116,7 +116,7 @@ label {
   top: 0;
   left: 300px;
 }`)
-export class SvgApp extends CivComponent {
+export default class SvgApp extends CivComponent {
 
     @Reactive
     stats: Axis[] = [
@@ -152,4 +152,4 @@ export class SvgApp extends CivComponent {
 }
 
 
-new SvgApp().replaceElement(document.getElementById('app')!);
+

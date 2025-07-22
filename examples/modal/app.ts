@@ -93,11 +93,9 @@ export class Modal extends CivComponent {
       </modal>
 </div>`
 )
-export class ModalApp extends CivComponent {
+export default class ModalApp extends CivComponent {
 
     @Reactive
     showModal = false;
 
 }
-
-new ModalApp().replaceElement(document.getElementById('app')!);
