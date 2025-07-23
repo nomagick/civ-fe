@@ -234,11 +234,15 @@ export class CivComponent extends EventEmitter {
 
     @runOncePerClass
     protected _digestTemplateMagicExpressions() {
-        if (this.constructor.hasOwnProperty('components')) {
-            const components = (this.constructor as typeof CivComponent).components;
+        const constructor = this.constructor as typeof CivComponent;
+        if (constructor.hasOwnProperty('components')) {
+            const components = constructor.components;
             for (const [k, v] of Object.entries(components)) {
                 Reflect.set(components, k.toUpperCase(), v);
             }
+        }
+        if (!Object.getPrototypeOf(this).hasOwnProperty(REACTIVE_TEMPLATE_DOM)) {
+            return;
         }
         const dom = this[REACTIVE_TEMPLATE_DOM];
         if (!dom) {
@@ -269,10 +273,17 @@ export class CivComponent extends EventEmitter {
             return NodeFilter.FILTER_ACCEPT;
         });
 
-        const expressionMap = (this.constructor as typeof CivComponent).expressionMap;
-        const generatorExpressionMap = (this.constructor as typeof CivComponent).generatorExpressionMap || new Map();
+        if (!constructor.hasOwnProperty('expressionMap')) {
+            constructor.expressionMap = new Map();
+        }
+        const expressionMap = constructor.expressionMap;
+        const generatorExpressionMap = new Map();
+        if (!constructor.hasOwnProperty('elemTraitsLookup')) {
+            constructor.elemTraitsLookup = new Map();
+        }
+        const elemTraitsLookup = constructor.elemTraitsLookup;
         const elemTraitsMap: Map<Element, Traits> = new Map();
-        const components = (this.constructor as typeof CivComponent).components;
+        const components = constructor.components;
 
         let elem = walker.currentNode as Element | Text;
         do {
@@ -360,7 +371,6 @@ export class CivComponent extends EventEmitter {
         } while (elem = walker.nextNode() as Element);
 
         let serial = 1;
-        const elemTraitsLookup = (this.constructor as typeof CivComponent).elemTraitsLookup;
         for (const [k, v] of elemTraitsMap) {
             const sn = `${serial++}`;
             k.setAttribute(significantFlagClass, sn);
@@ -370,8 +380,8 @@ export class CivComponent extends EventEmitter {
         if (sheet) {
             document.adoptedStyleSheets.push(sheet);
         }
-        if (generatorExpressionMap.size && !(this.constructor as typeof CivComponent).generatorExpressionMap) {
-            (this.constructor as typeof CivComponent).generatorExpressionMap = generatorExpressionMap;
+        if (generatorExpressionMap.size) {
+            constructor.generatorExpressionMap = generatorExpressionMap;
         }
     }
 
@@ -453,7 +463,7 @@ export class CivComponent extends EventEmitter {
             if (!elSerial) {
                 throw new Error(`Invalid template, unknown elSerial for element in component ${identify(this.constructor as typeof CivComponent)}`);
             }
-            const [, expr, nsJoint] = this._elemTraitsLookup.get(elSerial)?.find(([t]) => t === 'for') || [];
+            const [, expr, nsJoint] = elemTraitsLookup.get(elSerial)?.find(([t]) => t === 'for') || [];
             if (!expr) {
                 throw new Error(`Cannot find *for expression for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
             }

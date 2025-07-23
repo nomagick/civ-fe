@@ -32,7 +32,6 @@ export class AxisLabel extends CivComponent {
     total!: number;
 
     get point() {
-        console.log('AxisLabel.point', this.stat, this.index, this.total);
         return valueToPoint(+this.stat.value + 10, this.index, this.total);
     }
 }

@@ -298,7 +298,11 @@ export const setImmediate = (function setImmediateFactory() {
     
     channel.port2.onmessage = function processCallbacks() {
         for (const x of callbacks) {
-            x.call(globalThis);
+            try {
+                x.call(globalThis);
+            } catch {
+                // ignore errors in callbacks
+            }
         }
         window.dispatchEvent(new CustomEvent('tick'));
         callbacks.length = 0;
