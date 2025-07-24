@@ -24,7 +24,7 @@ import { CivComponent, Reactive, Template, css, html } from 'civ-fe';
     </a>
 </div>
 `, css`
-:host button,a {
+:host button, :host a {
   display: block;
   margin-bottom: 1em;
 }

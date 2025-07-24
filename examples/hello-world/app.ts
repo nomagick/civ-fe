@@ -1,6 +1,6 @@
 import { CivComponent, Reactive, Template } from 'civ-fe';
 
-@Template(`<h1 id="app">Hello {{message}}</h1>`, `#app {color: red;}`)
+@Template(`<h1 id="app">Hello {{message}}</h1>`, `:host#app {color: red;}`)
 export default class HelloWorld extends CivComponent {
 
     @Reactive()

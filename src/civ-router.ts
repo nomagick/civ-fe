@@ -7,20 +7,22 @@ import { setImmediate } from 'lib/lang';
 let serial = 0;
 
 type CustomRouteFunction = (this: CivRouter, params: {
-    searchParams: URLSearchParams;
-    routeParams: Record<string, string>;
+    searchParams?: URLSearchParams;
+    routeParams?: Record<string, unknown>;
 }) => Promise<typeof CivComponent | CivComponent>;
 
 type ComponentType = (typeof CivComponent | CivComponent) | CustomRouteFunction | string;
 
 export interface RouterState {
     __type: 'routerState';
-    path: string;
+    path?: string;
+    name?: string;
     [key: string]: unknown;
 }
 
 export interface RouteDefinition {
-    path: string;
+    name?: string;
+    path?: string;
     component: ComponentType;
     transition?: boolean;
 }
@@ -33,8 +35,8 @@ export abstract class CivRouter extends CivComponent {
 
     current?: {
         route: RouteDefinition;
-        searchParams: URLSearchParams;
-        routeParams: Record<string, string>;
+        searchParams?: URLSearchParams;
+        routeParams?: Record<string, unknown>;
         component?: CivComponent;
     }
 
@@ -52,7 +54,12 @@ export abstract class CivRouter extends CivComponent {
         window.addEventListener('popstate', (ev) => {
             const targetUrl = new URL(window.location.href);
             if (ev.state && ev.state.__type === 'routerState') {
-                this.goto(targetUrl, !ev.hasUAVisualTransition);
+                if (ev.state.path) {
+                    this.gotoPath(targetUrl, {
+                        overrideTransition: !ev.hasUAVisualTransition,
+                        state: 'ignore',
+                    });
+                }
             }
         }, { signal: abortController.signal });
         document.addEventListener('click', (ev) => {
@@ -75,40 +82,65 @@ export abstract class CivRouter extends CivComponent {
                 return;
             }
             ev.preventDefault();
-            this.goto(parsed);
+            this.gotoPath(parsed);
         }, { signal: abortController.signal });
 
-        setImmediate(()=> {
+        setImmediate(() => {
             this._register();
-            this.goto(window.location.href, false);
+            this.gotoPath(window.location.href, {
+                overrideTransition: false,
+                state: 'replace',
+            });
         });
     }
 
     @runOncePerInstance
     protected _register() {
         for (const route of this.routes) {
-            this.trieRouter.register(route.path, route);
+            if (route.path) {
+                this.trieRouter.register(route.path, route);
+            }
         }
     }
 
-    protected prepareGoto(path: string | URL) {
-        const targetUrl = typeof path === 'string' ? new URL(path, window.location.href) : path;
-        if (targetUrl.origin !== window.location.origin) {
-            throw new Error(`Cannot navigate to a different origin: ${targetUrl.origin}`);
+    protected prepareGoto(target: {
+        path?: string | URL;
+        name?: string;
+        routeParams?: Record<string, unknown>;
+    }) {
+        let route: RouteDefinition;
+        let routeParams: Record<string, unknown>;
+        let searchParams: URLSearchParams | undefined;
+        let targetUrl: URL | undefined;
+        if (target.path) {
+            const path = target.path;
+            targetUrl = typeof path === 'string' ? new URL(path, window.location.href) : path;
+            if (targetUrl.origin !== window.location.origin) {
+                throw new Error(`Cannot navigate to a different origin: ${targetUrl.origin}`);
+            }
+            const [matchedRoute] = this.trieRouter.match(targetUrl.pathname);
+            if (!matchedRoute) {
+                throw new Error(`No route matched for path: ${targetUrl.pathname}`);
+            }
+            searchParams = targetUrl.searchParams;
+            [route, routeParams] = matchedRoute;
+        } else if (target.name) {
+            const matchedRoute = this.routes.find((r) => r.name === target.name);
+            if (!matchedRoute) {
+                throw new Error(`No route matched for name: ${target.name}`);
+            }
+            route = matchedRoute;
+            routeParams = target.routeParams || {};
+        } else {
+            throw new Error('Either path or name must be provided to navigate');
         }
 
-        const [matchedRoute] = this.trieRouter.match(targetUrl.pathname);
-        if (!matchedRoute) {
-            throw new Error(`No route matched for path: ${targetUrl.pathname}`);
-        }
-
-        const [route, routeParams] = matchedRoute;
 
         const previousCurrent = this.current;
 
         this.current = {
             route,
-            searchParams: targetUrl.searchParams,
+            searchParams,
             routeParams,
         };
 
@@ -167,76 +199,109 @@ export abstract class CivRouter extends CivComponent {
         }
     }
 
-    async replaceGoto(path: string | URL, overrideTransition?: boolean) {
-        const { targetUrl, renderComp, loadProcedure } = this.prepareGoto(path);
+    async gotoPath(path: string | URL, options: {
+        overrideTransition?: boolean,
+        state?: 'push' | 'replace' | 'ignore'
+    } = {}) {
+        const { overrideTransition, state = 'push' } = options;
+        const { targetUrl, renderComp, loadProcedure } = this.prepareGoto({ path });
         const transition = overrideTransition ?? this.current!.route.transition;
 
         if ('startViewTransition' in document && transition !== false) {
-            document.startViewTransition(async () => {
-                try {
-                    const component = await loadProcedure();
+            return new Promise((resolve, reject) => {
+                document.startViewTransition(async () => {
+                    try {
+                        const component = await loadProcedure();
 
-                    await renderComp(component);
-                    history.replaceState({
-                        __type: 'routerState',
-                        path: this.current!.route.path,
-                    }, '', targetUrl);
-                } catch (err) {
-                    console.error('Error loading component:', err);
-                    throw err;
-                }
+                        await renderComp(component);
+                        if (state === 'push') {
+                            history.pushState({
+                                __type: 'routerState',
+                                path: this.current!.route.path,
+                            }, '', targetUrl);
+                        } else if (state === 'replace') {
+                            history.replaceState({
+                                __type: 'routerState',
+                                path: this.current!.route.path,
+                            }, '', targetUrl);
+                        }
+                        resolve(this.current);
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
             });
-            return;
         }
 
-        try {
-            const component = await loadProcedure();
+        const component = await loadProcedure();
 
-            await renderComp(component);
-            history.replaceState({
-                __type: 'routerState',
-                path: this.current!.route.path,
-            }, '', targetUrl);
-        } catch (err) {
-            console.error('Error loading component:', err);
-            throw err;
-        }
-    }
-
-    async goto(path: string | URL, overrideTransition?: boolean) {
-        const { targetUrl, renderComp, loadProcedure } = this.prepareGoto(path);
-        const transition = overrideTransition ?? this.current!.route.transition;
-
-        if ('startViewTransition' in document && transition !== false) {
-            document.startViewTransition(async () => {
-                try {
-                    const component = await loadProcedure();
-
-                    await renderComp(component);
-                    history.pushState({
-                        __type: 'routerState',
-                        path: this.current!.route.path,
-                    }, '', targetUrl);
-                } catch (err) {
-                    console.error('Error loading component:', err);
-                    throw err;
-                }
-            });
-            return;
-        }
-
-        try {
-            const component = await loadProcedure();
-
-            await renderComp(component);
+        await renderComp(component);
+        if (state === 'push') {
             history.pushState({
                 __type: 'routerState',
                 path: this.current!.route.path,
             }, '', targetUrl);
-        } catch (err) {
-            console.error('Error loading component:', err);
-            throw err;
+        } else if (state === 'replace') {
+            history.replaceState({
+                __type: 'routerState',
+                path: this.current!.route.path,
+            }, '', targetUrl);
         }
+        return this.current;
+    }
+
+    async gotoName(name: string, params?: Record<string, unknown>, options: {
+        overrideTransition?: boolean,
+        state?: 'push' | 'replace' | 'ignore'
+    } = {}) {
+        const { overrideTransition, state = 'push' } = options;
+        const { targetUrl, renderComp, loadProcedure } = this.prepareGoto({
+            name,
+            routeParams: params,
+        });
+        const transition = overrideTransition ?? this.current!.route.transition;
+
+        if ('startViewTransition' in document && transition !== false) {
+            return new Promise((resolve, reject) => {
+                document.startViewTransition(async () => {
+                    try {
+                        const component = await loadProcedure();
+
+                        await renderComp(component);
+                        if (state === 'push') {
+                            history.pushState({
+                                __type: 'routerState',
+                                name,
+                            }, '', targetUrl);
+                        } else if (state === 'replace') {
+                            history.replaceState({
+                                __type: 'routerState',
+                                name,
+                            }, '', targetUrl);
+                        }
+                        resolve(this.current);
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            });
+        }
+
+        const component = await loadProcedure();
+
+        await renderComp(component);
+        if (state === 'push') {
+            history.pushState({
+                __type: 'routerState',
+                name,
+            }, '', targetUrl);
+        } else if (state === 'replace') {
+            history.replaceState({
+                __type: 'routerState',
+                name,
+            }, '', targetUrl);
+        }
+        return this.current;
     }
 
 

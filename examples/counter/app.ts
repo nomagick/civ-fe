@@ -3,7 +3,7 @@ import { CivComponent, css, html, Reactive, Template } from 'civ-fe';
 @Template(
     html`<div>Count value is {{count}}</div>`,
     css`
-    #app {
+    :host #app {
         color: auto;
         font-size: 2rem;
     }`
