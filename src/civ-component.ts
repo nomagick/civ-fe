@@ -1,5 +1,5 @@
 import { runOncePerClass } from "./lib/once";
-import { REACTIVE_TEMPLATE_DOM, REACTIVE_TEMPLATE_SHEET, ReactiveTemplateMixin, identify } from "./lib/dom-template";
+import { INJECTED_NS_PREFIX, REACTIVE_TEMPLATE_DOM, REACTIVE_TEMPLATE_SHEET, ReactiveTemplateMixin, identify } from "./lib/dom-template";
 import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./lib/reactive";
 import {
     attachedEventName, detachEventName, moveEventName, movedEventName,
@@ -25,7 +25,7 @@ import { CivFeError } from "./error";
 import { mixins } from "./mixins";
 
 type mixins = typeof mixins;
-export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin, mixins {}
+export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin, mixins { }
 export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
 
 const forExpRegex = /^(?<expr1>.+?)\s+(?<typ>in|of)\s+(?<expr2>.+)$/;
@@ -59,7 +59,8 @@ export class CivComponent extends EventEmitter {
     element: Element;
     protected _pendingTasks: DomMaintenanceTask[] = [];
     protected _pendingConstructions: Map<DomConstructionTask | DomMaintenanceTask, DomConstructionTask> = new Map();
-    protected _revokers?: Set<AbortController>;
+    protected _signal: AbortSignal;
+    protected _revokers: Set<AbortController> = new Set();
     protected _subtreeRenderTaskTrack?: WeakMap<SubtreeRenderTask, TrieNode<object, Element>>;
     protected _placeHolderElementToTasksMap?: WeakMap<Element, Set<DomMaintenanceTask>>;
     protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
@@ -80,11 +81,13 @@ export class CivComponent extends EventEmitter {
         this._setupReactivity();
         Reflect.apply(activateReactivity, this, []);
         this._digestTasks();
+        const abortCtl = new AbortController();
+        this._revokers.add(abortCtl);
+        this._signal = abortCtl.signal;
     }
 
     foreign(eventTarget: ReactivityHost) {
         const abortCtl = this[REACTIVE_KIT].connect(eventTarget[REACTIVE_KIT]);
-        this._revokers ??= new Set();
         this._revokers.add(abortCtl);
 
         return abortCtl;
@@ -111,6 +114,11 @@ export class CivComponent extends EventEmitter {
             targetElement.classList.add(cls);
         }
 
+        const namedTemplates = el.querySelectorAll<HTMLTemplateElement>(`:scope > template[for]`);
+        if (namedTemplates.length) {
+            namedTemplates.forEach((el) => el.remove());
+        }
+
         const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
         if (defaultSlot) {
             defaultSlot.classList.add(`${clsId}__slotted`);
@@ -119,6 +127,8 @@ export class CivComponent extends EventEmitter {
                 nodes.push(node);
             });
             el.replaceChildren(...nodes);
+        } else if (!namedTemplates.length && el.childElementCount) {
+            console.warn(`Component ${clsId} has no default slot, but has child elements. These elements will be ignored.`);
         }
 
         const taskSet = this._subtreeTaskTrack.get(el);
@@ -127,11 +137,6 @@ export class CivComponent extends EventEmitter {
             for (const t of taskSet) {
                 this._taskToHostElementMap.set(t, targetElement);
             }
-        }
-
-        const namedTemplates = el.querySelectorAll<HTMLTemplateElement>(`:scope > template[for]`);
-        if (namedTemplates.length) {
-            namedTemplates.forEach((el) => el.remove());
         }
 
         namedTemplates.forEach((template) => {
@@ -158,9 +163,6 @@ export class CivComponent extends EventEmitter {
     }
 
     protected _cleanup() {
-        if (!this._revokers) {
-            return;
-        }
         for (const x of this._revokers) {
             x.abort();
         }
@@ -189,7 +191,7 @@ export class CivComponent extends EventEmitter {
             if (tgt === finalRef && propName === prop) {
                 cb(newVal, oldVal);
             }
-        }, { signal: opts?.signal, once: opts?.once });
+        }, { signal: opts?.signal || this._signal, once: opts?.once });
         if (opts?.immediate) {
             cb(Reflect.get(finalRef, prop), undefined);
         }
@@ -250,7 +252,7 @@ export class CivComponent extends EventEmitter {
         }
 
         for (const attr of Array.from(dom.documentElement.attributes)) {
-            if (attr.name.startsWith('xmlns')) {
+            if (attr.name.startsWith('xmlns') && attr.value.startsWith(INJECTED_NS_PREFIX)) {
                 dom.documentElement.removeAttributeNode(attr);
             }
         }
@@ -766,7 +768,10 @@ export class CivComponent extends EventEmitter {
             const err = CivFeError.from(error);
             err.message = `[TPL expr: ${expr}] ${err.message}`;
             // @ts-ignore
-            Error.captureStackTrace(err, fn);
+            if (Error.captureStackTrace) {
+                // @ts-ignore
+                Error.captureStackTrace(err, fn);
+            }
             throw err;
         } finally {
             this[REACTIVE_KIT].off('access', hdl);
@@ -810,7 +815,10 @@ export class CivComponent extends EventEmitter {
             const err = CivFeError.from(error);
             err.message = `[TPL expr: ${expr}] ${err.message}`;
             // @ts-ignore
-            Error.captureStackTrace(err, fn);
+            if (Error.captureStackTrace) {
+                // @ts-ignore
+                Error.captureStackTrace(err, fn);
+            }
             throw err;
         } finally {
             this[REACTIVE_KIT].off('access', hdl);
@@ -849,7 +857,10 @@ export class CivComponent extends EventEmitter {
             const err = CivFeError.from(error);
             err.message = `[TPL iter: ${expr}] ${err.message}`;
             // @ts-ignore
-            Error.captureStackTrace(err, fn);
+            if (Error.captureStackTrace) {
+                // @ts-ignore
+                Error.captureStackTrace(err, fn);
+            }
             throw err;
         } finally {
             this[REACTIVE_KIT].off('access', dhdl);
@@ -1085,7 +1096,7 @@ export class CivComponent extends EventEmitter {
                                     this._evaluateExpr(task.expr, task.ns, true, target.checked ? target.value : '');
                                 }
                             }
-                        });
+                        }, { signal: this._signal });
                         listenerAddedForTask.add(task);
                     }
                     this._setConstruction(task, {
@@ -1103,7 +1114,7 @@ export class CivComponent extends EventEmitter {
                             const target = e.target as HTMLInputElement;
                             const equiv = target.value === 'on' ? target.checked : target.value;
                             this._evaluateExpr(task.expr, task.ns, true, equiv);
-                        });
+                        }, { signal: this._signal });
                         listenerAddedForTask.add(task);
                     }
                     this._setConstruction(task, {
@@ -1124,7 +1135,7 @@ export class CivComponent extends EventEmitter {
                         el.addEventListener('change', (e: Event) => {
                             const target = e.target as HTMLInputElement;
                             this._evaluateExpr(task.expr, task.ns, true, Array.from(target.files || []));
-                        });
+                        }, { signal: this._signal });
                         listenerAddedForTask.add(task);
                     }
                     recur = false;
@@ -1136,7 +1147,7 @@ export class CivComponent extends EventEmitter {
                         el.addEventListener('change', (e: Event) => {
                             const target = e.target as HTMLInputElement;
                             this._evaluateExpr(task.expr, task.ns, true, target.valueAsNumber);
-                        });
+                        }, { signal: this._signal });
                         listenerAddedForTask.add(task);
                     }
 
@@ -1158,7 +1169,7 @@ export class CivComponent extends EventEmitter {
                         el.addEventListener('change', (e: Event) => {
                             const target = e.target as HTMLInputElement;
                             this._evaluateExpr(task.expr, task.ns, true, target.valueAsDate);
-                        });
+                        }, { signal: this._signal });
                         listenerAddedForTask.add(task);
                     }
 
@@ -1176,8 +1187,8 @@ export class CivComponent extends EventEmitter {
                             const target = e.target as HTMLInputElement;
                             this._evaluateExpr(task.expr, task.ns, true, target.value);
                         };
-                        el.addEventListener('change', hdl);
-                        el.addEventListener('input', hdl);
+                        el.addEventListener('change', hdl, { signal: this._signal });
+                        el.addEventListener('input', hdl, { signal: this._signal });
                         listenerAddedForTask.add(task);
                     }
                     this._setConstruction(task, {
@@ -1201,7 +1212,7 @@ export class CivComponent extends EventEmitter {
                         } else {
                             this._evaluateExpr(task.expr, task.ns, true, Array.from(target.selectedOptions).map((x) => x.value));
                         }
-                    });
+                    }, { signal: this._signal });
                     listenerAddedForTask.add(task);
                 }
                 this._setConstruction(task, {
@@ -1216,7 +1227,7 @@ export class CivComponent extends EventEmitter {
                     el.addEventListener('change', (e: Event) => {
                         const target = e.target as HTMLSelectElement;
                         this._evaluateExpr(task.expr, task.ns, true, target.value);
-                    });
+                    }, { signal: this._signal });
                     listenerAddedForTask.add(task);
                 }
                 this._setConstruction(task, {
@@ -1232,8 +1243,8 @@ export class CivComponent extends EventEmitter {
                     const target = e.target as HTMLInputElement;
                     this._evaluateExpr(task.expr, task.ns, true, target.value);
                 };
-                el.addEventListener('change', hdl);
-                el.addEventListener('input', hdl);
+                el.addEventListener('change', hdl, { signal: this._signal });
+                el.addEventListener('input', hdl, { signal: this._signal });
                 listenerAddedForTask.add(task);
             }
             this._setConstruction(task, {
@@ -1313,7 +1324,7 @@ export class CivComponent extends EventEmitter {
         let stopPropagation = false;
         let preventDefault = false;
         let targetSelf = false;
-        const opts: Record<string, unknown> = {};
+        const opts: Record<string, unknown> = { signal: this._signal };
         for (const x of traits) {
             switch (x) {
                 case 'stop': {
@@ -1904,16 +1915,15 @@ export function Foreign<T extends CivComponent>(target: T, key: string, _descrip
         },
         set(this: T, value) {
             if (value === val) {
-                return true;
+                return;
             }
             val = value;
             if (revoker) {
                 revoker.abort();
-                this._revokers?.delete(revoker);
+                this._revokers.delete(revoker);
                 revoker = undefined;
             }
             revoker = this.foreign(value);
-            return true;
         }
     });
 }

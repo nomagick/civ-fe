@@ -71,6 +71,8 @@ export function SVG(text: string) {
     };
 }
 
+export const INJECTED_NS_PREFIX = 'https://civkit.naiver.org/';
+
 export function XHTML(text: string) {
     return function <T extends ReactiveTemplateMixin>(target: T) {
         if (typeof target !== 'function') {
@@ -80,7 +82,7 @@ export function XHTML(text: string) {
 
         const nsInjections = [
             'xmlns="http://www.w3.org/1999/xhtml"',
-            ...nsCollection.map((ns) => `xmlns:${ns}="https://civkit.naiver.org/${ns}"`),
+            ...nsCollection.map((ns) => `xmlns:${ns}="${INJECTED_NS_PREFIX}${ns}"`),
         ];
         const firstClose = text.indexOf('>');
         if (firstClose === -1) {
