@@ -91,10 +91,10 @@ export class CivComponent extends EventEmitter {
         this._activateTemplate(constructor.mode);
         if (this.__element) {
             elementToComponentMap.set(this.__element, this);
-        }
-        if ('observedAttributes' in this.constructor) {
-            // @ts-ignore
-            setupAttrObserver.call(this);
+            if ('observedAttributes' in this.constructor) {
+                // @ts-ignore
+                setupAttrObserver.call(this);
+            }
         }
         this._setupReactivity();
         Reflect.apply(activateReactivity, this, []);
@@ -1818,6 +1818,11 @@ function detachRoutine(this: CivComponent, sub: Node, dispose?: boolean) {
         const hdl = (el: Element) => {
             const comp = elementToComponentMap.get(el);
             if (!comp) {
+                if (dispose) {
+                    const sel = el as any as CivComponent;
+                    (sel[Symbol.dispose] || sel[Symbol.asyncDispose])?.call(sel);
+                }
+
                 return;
             }
             if (sub.isConnected && 'disconnectedCallback' in comp && typeof comp.disconnectedCallback === 'function') {
