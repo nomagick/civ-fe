@@ -51,13 +51,23 @@ const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
 const placeHolderElementToRealElementMap: WeakMap<Node, Node> = new WeakMap();
 
 export class CivComponent extends EventEmitter {
+    static mode = 'dom';
     static components: Record<string, typeof CivComponent> = {};
     static customElementRegistry?: CustomElementRegistry;
     static expressionMap: Map<string, ExprFn> = new Map();
     static generatorExpressionMap?: Map<string, GenExprFn>;
     static elemTraitsLookup: Map<string, Traits> = new Map();
     readonly serial = serial++;
-    element: Element;
+
+    get element(): Element {
+        if (this instanceof Element) {
+            return this;
+        }
+
+        return this.__element;
+    }
+    protected __element!: Element;
+
     protected __shadowRoot?: ShadowRoot;
     protected _pendingTasks: DomMaintenanceTask[] = [];
     protected _pendingConstructions: Map<DomConstructionTask | DomMaintenanceTask, DomConstructionTask> = new Map();
@@ -74,12 +84,14 @@ export class CivComponent extends EventEmitter {
         super();
         Reflect.apply(initReactivity, this, []);
         const constructor = this.constructor as typeof CivComponent;
-        this._digestTemplateMagicExpressions();
+        this._digestTemplateMagicExpressions(constructor.mode);
         if (constructor.mode === 'shadow') {
             this._attachShadow();
         }
-        this.element = this._activateTemplate();
-        elementToComponentMap.set(this.element, this);
+        this._activateTemplate(constructor.mode);
+        if (this.__element) {
+            elementToComponentMap.set(this.__element, this);
+        }
         if ('observedAttributes' in this.constructor) {
             // @ts-ignore
             setupAttrObserver.call(this);
@@ -126,7 +138,9 @@ export class CivComponent extends EventEmitter {
         const compCls = this.constructor as typeof CivComponent;
         const clsId = identify(compCls);
         // "class" attribute could have been replaced, loosing class identifier, adding it back here
-        targetElement.classList.add(clsId);
+        if (!this.__shadowRoot) {
+            this.element.classList.add(clsId);
+        }
         for (let i = 0; i < el.classList.length; i++) {
             const cls = el.classList[i];
             targetElement.classList.add(cls);
@@ -253,7 +267,7 @@ export class CivComponent extends EventEmitter {
     }
 
     @runOncePerClass
-    protected _digestTemplateMagicExpressions() {
+    protected _digestTemplateMagicExpressions(mode: string) {
         const constructor = this.constructor as typeof CivComponent;
         if (constructor.hasOwnProperty('components')) {
             const components = constructor.components;
@@ -398,7 +412,7 @@ export class CivComponent extends EventEmitter {
         }
         const sheet = this[REACTIVE_TEMPLATE_SHEET];
         if (sheet) {
-            if (!(this instanceof Element)) {
+            if (mode === 'dom') {
                 mangleSelectorText(sheet.cssRules, identify(constructor));
                 document.adoptedStyleSheets.push(sheet);
             }
@@ -408,32 +422,45 @@ export class CivComponent extends EventEmitter {
         }
     }
 
-    protected _activateTemplate() {
+    protected _activateTemplate(mode: string) {
         const tplDom = this[REACTIVE_TEMPLATE_DOM];
         if (!tplDom) {
-            this.element = document.createElement(`div`);
+            if (mode === 'dom' && !(this instanceof Element)) {
+                const elem = document.createElement(`div`);
+                elem.classList.add(identify(this.constructor as typeof CivComponent));
+                this.__element = elem;
+            }
+
+            return;
+        }
+
+        if ((this instanceof Element) || this.__shadowRoot) {
+            const tgt: ParentNode = this.__shadowRoot || this as any as Element;
+            if (tplDom instanceof XMLDocument) {
+                tgt.append(document.importNode(tplDom.documentElement, true));
+            } else if (tplDom.body.firstElementChild) {
+                tplDom.body.childNodes.forEach((x) => {
+                    tgt.append(document.importNode(x, true));
+                });
+            } else {
+                tgt.append(document.importNode(tplDom.head, true));
+            }
+        } else {
+            const tgtNode = tplDom instanceof XMLDocument ?
+                tplDom.documentElement : (tplDom.body.firstElementChild || tplDom.head);
+            const rootElement = document.importNode(tgtNode, true);
+            if (isMagicForTemplateElement(rootElement)) {
+                throw new Error(`Template for component ${identify(this.constructor as typeof CivComponent)} cannot be a *for template.`);
+            }
+            this.__element = rootElement;
+        }
+
+
+        if (mode === 'dom') {
             this.element.classList.add(identify(this.constructor as typeof CivComponent));
-
-            return this.element;
         }
-
-        const tgtNode = tplDom instanceof XMLDocument ?
-            tplDom.documentElement : (tplDom.body.firstElementChild || tplDom.head);
-
-        const rootElement = document.importNode(tgtNode, true);
-        if (!(this instanceof Element)) {
-            rootElement.classList.add(identify(this.constructor as typeof CivComponent));
-        }
-
-        if (isMagicForTemplateElement(rootElement)) {
-            throw new Error(`Template for component ${identify(this.constructor as typeof CivComponent)} cannot be a *for template.`);
-        }
-
-        this.element = rootElement;
 
         this._renderTemplateElem();
-
-        return this.element;
     }
 
     protected _trackTask(task: DomMaintenanceTask, hostElem: Element) {
