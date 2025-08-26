@@ -1,5 +1,5 @@
 import { runOncePerClass } from "./lib/once";
-import { INJECTED_NS_PREFIX, REACTIVE_TEMPLATE_DOM, REACTIVE_TEMPLATE_SHEET, ReactiveTemplateMixin, identify, mangleSelectorText } from "./lib/dom-template";
+import { INJECTED_NS_PREFIX, REACTIVE_TEMPLATE_DOM, REACTIVE_TEMPLATE_SHEET, ReactiveTemplateMixin, identify } from "./lib/dom-template";
 import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./lib/reactive";
 import {
     attachedEventName, detachEventName, moveEventName, movedEventName,
@@ -20,19 +20,24 @@ import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EventEmitter } from "./lib/event-emitter";
 import { perNextTick } from "./lib/tick";
 import { unwrap } from "./lib/reactive-kit";
-import { isPrimitiveLike } from "./lib/lang";
+import { chainEntries, chainEntriesSimple, isPrimitiveLike } from "./lib/lang";
 import { CivFeError } from "./error";
 import { mixins } from "./mixins";
 
 type mixins = typeof mixins;
-export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin, mixins { }
-export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
+export interface CivElement extends EventEmitter, ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin, mixins {
+    addEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
+    removeEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;
+}
+export const elementToComponentMap: WeakMap<Element, CivElement> = new WeakMap();
 
 const forExpRegex = /^(?<expr1>.+?)\s+(?<typ>in|of)\s+(?<expr2>.+)$/;
 let serial = 1;
 
-type ExprFn = (this: CivComponent, _ns: Record<string, unknown>, assignment?: unknown) => unknown;
-type GenExprFn = (this: CivComponent, _ns: Record<string, unknown>) => Generator;
+type ExprFn = (this: CivElement, _ns: Record<string, unknown>, assignment?: unknown) => unknown;
+type GenExprFn = (this: CivElement, _ns: Record<string, unknown>) => Generator;
 type WatcherOpts = { signal?: AbortSignal, immediate?: boolean, once?: boolean; };
 
 const ANY_WRITE_OP_TRIGGER = '__civ_any_write_op_trigger__';
@@ -50,15 +55,15 @@ const listenerAddedForTask = new WeakSet<DomMaintenanceTask>();
 const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
 const placeHolderElementToRealElementMap: WeakMap<Node, Node> = new WeakMap();
 
-export class CivComponent extends EventEmitter {
-    static components: Record<string, typeof CivComponent> = {};
-    static customElementRegistry?: CustomElementRegistry;
+export class CivElement extends HTMLElement {
+    static components: Record<string, typeof CivElement> = {};
+    static customElementRegistry: CustomElementRegistry = customElements;
     static expressionMap: Map<string, ExprFn> = new Map();
     static generatorExpressionMap?: Map<string, GenExprFn>;
     static elemTraitsLookup: Map<string, Traits> = new Map();
     readonly serial = serial++;
     element: Element;
-    protected __shadowRoot?: ShadowRoot;
+    protected __shadowRoot!: ShadowRoot;
     protected _pendingTasks: DomMaintenanceTask[] = [];
     protected _pendingConstructions: Map<DomConstructionTask | DomMaintenanceTask, DomConstructionTask> = new Map();
     protected _signal: AbortSignal;
@@ -73,17 +78,11 @@ export class CivComponent extends EventEmitter {
     constructor() {
         super();
         Reflect.apply(initReactivity, this, []);
-        const constructor = this.constructor as typeof CivComponent;
         this._digestTemplateMagicExpressions();
-        if (constructor.mode === 'shadow') {
-            this._attachShadow();
-        }
+        this._attachShadow();
         this.element = this._activateTemplate();
+        this.__shadowRoot.append(this.element);
         elementToComponentMap.set(this.element, this);
-        if ('observedAttributes' in this.constructor) {
-            // @ts-ignore
-            setupAttrObserver.call(this);
-        }
         this._setupReactivity();
         Reflect.apply(activateReactivity, this, []);
         this._digestTasks();
@@ -95,13 +94,6 @@ export class CivComponent extends EventEmitter {
     protected _attachShadow() {
         // @ts-ignore
         this.__shadowRoot = this.attachShadow({ mode: 'open', registry: (this.constructor as typeof CivElement).customElementRegistry });
-
-        const sheet = this[REACTIVE_TEMPLATE_SHEET];
-        if (sheet) {
-            this.__shadowRoot!.adoptedStyleSheets.push(sheet);
-        }
-
-        return this.__shadowRoot!;
     }
 
     foreign(eventTarget: ReactivityHost) {
@@ -123,7 +115,7 @@ export class CivComponent extends EventEmitter {
             el.removeAttributeNode(attr);
             targetElement.setAttributeNode(attr);
         }
-        const compCls = this.constructor as typeof CivComponent;
+        const compCls = this.constructor as typeof CivElement;
         const clsId = identify(compCls);
         // "class" attribute could have been replaced, loosing class identifier, adding it back here
         targetElement.classList.add(clsId);
@@ -240,25 +232,29 @@ export class CivComponent extends EventEmitter {
     }
 
     protected get _expressionMap() {
-        return (this.constructor as typeof CivComponent).expressionMap;
+        return (this.constructor as typeof CivElement).expressionMap;
     }
     protected get _generatorExpressionMap() {
-        return (this.constructor as typeof CivComponent).generatorExpressionMap;
+        return (this.constructor as typeof CivElement).generatorExpressionMap;
     }
     protected get _elemTraitsLookup() {
-        return (this.constructor as typeof CivComponent).elemTraitsLookup;
+        return (this.constructor as typeof CivElement).elemTraitsLookup;
     }
     protected get _components() {
-        return (this.constructor as typeof CivComponent).components;
+        return (this.constructor as typeof CivElement).components;
     }
 
     @runOncePerClass
     protected _digestTemplateMagicExpressions() {
-        const constructor = this.constructor as typeof CivComponent;
+        const constructor = this.constructor as typeof CivElement;
         if (constructor.hasOwnProperty('components')) {
             const components = constructor.components;
             for (const [k, v] of Object.entries(components)) {
                 Reflect.set(components, k.toUpperCase(), v);
+            }
+            constructor.customElementRegistry = new CustomElementRegistry();
+            for (const [k, v] of chainEntriesSimple(components)) {
+                constructor.customElementRegistry.define(k, v as any);
             }
         }
         if (!Object.getPrototypeOf(this).hasOwnProperty(REACTIVE_TEMPLATE_DOM)) {
@@ -398,10 +394,7 @@ export class CivComponent extends EventEmitter {
         }
         const sheet = this[REACTIVE_TEMPLATE_SHEET];
         if (sheet) {
-            if (!(this instanceof Element)) {
-                mangleSelectorText(sheet.cssRules, identify(constructor));
-                document.adoptedStyleSheets.push(sheet);
-            }
+            this.__shadowRoot.adoptedStyleSheets.push(sheet);
         }
         if (generatorExpressionMap.size) {
             constructor.generatorExpressionMap = generatorExpressionMap;
@@ -412,7 +405,7 @@ export class CivComponent extends EventEmitter {
         const tplDom = this[REACTIVE_TEMPLATE_DOM];
         if (!tplDom) {
             this.element = document.createElement(`div`);
-            this.element.classList.add(identify(this.constructor as typeof CivComponent));
+            this.element.classList.add(identify(this.constructor as typeof CivElement));
 
             return this.element;
         }
@@ -421,12 +414,10 @@ export class CivComponent extends EventEmitter {
             tplDom.documentElement : (tplDom.body.firstElementChild || tplDom.head);
 
         const rootElement = document.importNode(tgtNode, true);
-        if (!(this instanceof Element)) {
-            rootElement.classList.add(identify(this.constructor as typeof CivComponent));
-        }
+        rootElement.classList.add(identify(this.constructor as typeof CivElement));
 
         if (isMagicForTemplateElement(rootElement)) {
-            throw new Error(`Template for component ${identify(this.constructor as typeof CivComponent)} cannot be a *for template.`);
+            throw new Error(`Template for component ${identify(this.constructor as typeof CivElement)} cannot be a *for template.`);
         }
 
         this.element = rootElement;
@@ -476,8 +467,8 @@ export class CivComponent extends EventEmitter {
         const expressionMap = this._expressionMap;
         let el;
         while (el = elem.querySelector(`.${subtreeTemplateFlagClass}`)) {
-            const start = document.createComment(`=== Start ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
-            const end = document.createComment(`=== End ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
+            const start = document.createComment(`=== Start ${identify(this.constructor as typeof CivElement)} ${el.getAttribute(significantFlagClass) || ''}`);
+            const end = document.createComment(`=== End ${identify(this.constructor as typeof CivElement)} ${el.getAttribute(significantFlagClass) || ''}`);
             el.before(start);
             el.after(end);
             const parent = el.parentElement!;
@@ -486,15 +477,15 @@ export class CivComponent extends EventEmitter {
 
             const elSerial = el.getAttribute(significantFlagClass) || '';
             if (!elSerial) {
-                throw new Error(`Invalid template, unknown elSerial for element in component ${identify(this.constructor as typeof CivComponent)}`);
+                throw new Error(`Invalid template, unknown elSerial for element in component ${identify(this.constructor as typeof CivElement)}`);
             }
             const [, expr, nsJoint] = elemTraitsLookup.get(elSerial)?.find(([t]) => t === 'for') || [];
             if (!expr) {
-                throw new Error(`Cannot find *for expression for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
+                throw new Error(`Cannot find *for expression for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivElement)}`);
             }
             const injectNs = nsJoint?.split(',').filter(Boolean);
             if (!injectNs?.length) {
-                throw new Error(`Invalid *for expression: ${expr} for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
+                throw new Error(`Invalid *for expression: ${expr} for element with serial ${elSerial} in component ${identify(this.constructor as typeof CivElement)}`);
             }
 
             this._trackTask({
@@ -512,7 +503,7 @@ export class CivComponent extends EventEmitter {
             componentPlaceHolderElements.add(el);
             const elSerial = el.getAttribute(significantFlagClass) || '';
             if (!elSerial) {
-                throw new Error(`Element with component flag does not have a significant flag class in component ${identify(this.constructor as typeof CivComponent)}`);
+                throw new Error(`Element with component flag does not have a significant flag class in component ${identify(this.constructor as typeof CivElement)}`);
             }
             const traits = elemTraitsLookup.get(elSerial) || [];
             this._trackTask({
@@ -535,7 +526,7 @@ export class CivComponent extends EventEmitter {
             }
             const traits = elemTraitsLookup.get(elSerial);
             if (!traits) {
-                throw new Error(`Cannot find traits for element ${el.tagName} with serial ${elSerial} in component ${identify(this.constructor as typeof CivComponent)}`);
+                throw new Error(`Cannot find traits for element ${el.tagName} with serial ${elSerial} in component ${identify(this.constructor as typeof CivElement)}`);
             }
             const hasPlainTrait = traits.some(([trait]) => trait === 'plain');
             for (const [trait, ...args] of traits) {
@@ -659,7 +650,7 @@ export class CivComponent extends EventEmitter {
                             }
                             break;
                         }
-                        const placeHolder = document.createComment(`=== if group ${identify(this.constructor as typeof CivComponent)} ${el.getAttribute(significantFlagClass) || ''}`);
+                        const placeHolder = document.createComment(`=== if group ${identify(this.constructor as typeof CivElement)} ${el.getAttribute(significantFlagClass) || ''}`);
                         el.before(placeHolder);
                         for (const [_expr, el] of exprGroup) {
                             el.remove();
@@ -926,7 +917,7 @@ export class CivComponent extends EventEmitter {
 
         const initialYield = it.next().value;
         if (!initialYield) {
-            throw new Error(`Invalid *for expression: ${task.expr} in component ${identify(this.constructor as typeof CivComponent)}`);
+            throw new Error(`Invalid *for expression: ${task.expr} in component ${identify(this.constructor as typeof CivElement)}`);
         }
         let equivalentIterable = initialYield.value;
         if (!equivalentIterable) {
@@ -1018,7 +1009,7 @@ export class CivComponent extends EventEmitter {
             return;
         }
         const el = task.sub;
-        const instance = Reflect.construct(compCls, []) as CivComponent;
+        const instance = Reflect.construct(compCls, []) as CivElement;
         const newEl = instance.replaceElement(el);
         placeHolderElementToRealElementMap.set(el, newEl);
         const relTasks = this._placeHolderElementToTasksMap?.get(el);
@@ -1716,9 +1707,9 @@ export class CivComponent extends EventEmitter {
     }
 }
 
-Object.assign(CivComponent.prototype, mixins);
+Object.assign(CivElement.prototype, mixins);
 
-function attachRoutine(this: CivComponent, sub: Node) {
+function attachRoutine(this: CivElement, sub: Node) {
     if (sub.isConnected) {
         const event = new CustomEvent(attachedEventName, {
             detail: { component: this },
@@ -1741,7 +1732,7 @@ function attachRoutine(this: CivComponent, sub: Node) {
     }
 }
 
-function moveRoutine(this: CivComponent, sub: Node) {
+function moveRoutine(this: CivElement, sub: Node) {
     if (sub.isConnected) {
         const event = new CustomEvent(moveEventName, {
             detail: { component: this },
@@ -1750,7 +1741,7 @@ function moveRoutine(this: CivComponent, sub: Node) {
         sub.dispatchEvent(event);
     }
 }
-function movedRoutine(this: CivComponent, sub: Node, isRealMove: boolean = true) {
+function movedRoutine(this: CivElement, sub: Node, isRealMove: boolean = true) {
     if (sub.isConnected) {
         const event = new CustomEvent(movedEventName, {
             detail: { component: this },
@@ -1769,7 +1760,7 @@ function movedRoutine(this: CivComponent, sub: Node, isRealMove: boolean = true)
         }
     }
 }
-function detachRoutine(this: CivComponent, sub: Node, dispose?: boolean) {
+function detachRoutine(this: CivElement, sub: Node, dispose?: boolean) {
     const event = new CustomEvent(detachEventName, {
         detail: { component: this },
         cancelable: true,
@@ -1922,7 +1913,7 @@ function CSSStyleDeclarationSync(task: SetPropTask) {
 }
 
 
-export function Foreign<T extends CivComponent>(target: T, key: string, _descriptor?: PropertyDescriptor) {
+export function Foreign<T extends CivElement>(target: T, key: string, _descriptor?: PropertyDescriptor) {
     if (typeof target === 'function') {
         throw new TypeError("Foreign decorator is intended for class properties or methods, not for classes themselves.");
     }
@@ -1951,13 +1942,13 @@ export function Foreign<T extends CivComponent>(target: T, key: string, _descrip
     });
 }
 
-export function ResolveComponents(mappings: Record<string, typeof CivComponent>) {
-    return function (target: typeof CivComponent) {
+export function ResolveComponents(mappings: Record<string, typeof CivElement>) {
+    return function (target: typeof CivElement) {
         if (typeof target !== 'function') {
             throw new TypeError("ResolveComponents decorator is intended for class constructors, not for class instances.");
         }
-        if (!(target.prototype instanceof CivComponent)) {
-            throw new TypeError("ResolveComponents decorator is intended for sub-class of CivComponent.");
+        if (!(target.prototype instanceof CivElement)) {
+            throw new TypeError("ResolveComponents decorator is intended for sub-class of CivElement.");
         }
 
 
