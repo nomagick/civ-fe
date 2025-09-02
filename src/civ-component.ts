@@ -51,7 +51,7 @@ const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
 const placeHolderElementToRealElementMap: WeakMap<Node, Node> = new WeakMap();
 
 export class CivComponent extends EventEmitter {
-    static mode = 'dom';
+    static mode: string = 'dom';
     static components: Record<string, typeof CivComponent> = {};
     static customElementRegistry: CustomElementRegistry = customElements;
     static expressionMap: Map<string, ExprFn> = new Map();
