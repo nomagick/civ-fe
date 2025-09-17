@@ -17,7 +17,7 @@ import {
 } from "./dom";
 import { TrieNode } from "./lib/trie";
 import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
-import { EventEmitter } from "./lib/event-emitter";
+import { EVENT_EMITTER_REVOKERS, EventEmitter } from "./lib/event-emitter";
 import { perNextTick } from "./lib/tick";
 import { unwrap } from "./lib/reactive-kit";
 import { isPrimitiveLike } from "./lib/lang";
@@ -25,7 +25,7 @@ import { CivFeError } from "./error";
 import { mixins } from "./mixins";
 
 type mixins = typeof mixins;
-export interface CivComponent extends ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin, mixins { }
+export interface CivComponent extends EventEmitter, ReactivityHost, ReactiveTemplateMixin, ReactiveAttrMixin, mixins { }
 export const elementToComponentMap: WeakMap<Element, CivComponent> = new WeakMap();
 
 const forExpRegex = /^(?<expr1>.+?)\s+(?<typ>in|of)\s+(?<expr2>.+)$/;
@@ -50,7 +50,11 @@ const listenerAddedForTask = new WeakSet<DomMaintenanceTask>();
 const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
 const placeHolderElementToRealElementMap: WeakMap<Node, Node> = new WeakMap();
 
-export class CivComponent extends EventEmitter {
+export const SYM_CIV_COMPONENT = Symbol('CivComponent');
+
+const CIV_ELEMENT_CLS_CACHE = new WeakMap();
+
+export class CivComponent extends EventTarget {
     static mode: string = 'dom';
     static components: Record<string, typeof CivComponent> = {};
     static customElementRegistry: CustomElementRegistry = customElements;
@@ -81,8 +85,52 @@ export class CivComponent extends EventEmitter {
     protected _subtreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
     protected _nextFrameRecept?: ReturnType<typeof requestAnimationFrame>;
 
+    static customElement<T extends HTMLElement = HTMLElement>(extendsCls: { new(): T; prototype: T; } = HTMLElement as any): {
+        [k in keyof typeof CivComponent]: (typeof CivComponent)[k];
+    } & { new(): CivComponent & T; prototype: CivComponent & T; } {
+        if (CIV_ELEMENT_CLS_CACHE.has(extendsCls)) {
+            return CIV_ELEMENT_CLS_CACHE.get(extendsCls)! as any;
+        }
+        // @ts-ignore
+        interface cls extends CivComponent { };
+        // @ts-ignore
+        class cls extends extendsCls {
+            constructor() {
+                super();
+                this[EVENT_EMITTER_REVOKERS] = new Map();
+                Reflect.apply(initReactivity, this, []);
+                const constructor = this.constructor as typeof CivComponent;
+                this._digestTemplateMagicExpressions(constructor.mode);
+                if (constructor.mode === 'shadow') {
+                    this._attachShadow();
+                }
+                this._activateTemplate(constructor.mode);
+                if (this.__element) {
+                    elementToComponentMap.set(this.__element, this);
+                    if ('observedAttributes' in this.constructor) {
+                        // @ts-ignore
+                        setupAttrObserver.call(this);
+                    }
+                }
+                this._setupReactivity();
+                Reflect.apply(activateReactivity, this, []);
+                this._digestTasks();
+                const abortCtl = new AbortController();
+                this._revokers.add(abortCtl);
+                this._signal = abortCtl.signal;
+            }
+        }
+        Object.assign(cls, this);
+        Object.assign(cls.prototype, this.prototype);
+        Object.defineProperty(cls, 'name', { value: `Civ${extendsCls.name}`, configurable: true, writable: false });
+        CIV_ELEMENT_CLS_CACHE.set(extendsCls, cls as any);
+
+        return cls as any;
+    }
+
     constructor() {
         super();
+        this[EVENT_EMITTER_REVOKERS] = new Map();
         Reflect.apply(initReactivity, this, []);
         const constructor = this.constructor as typeof CivComponent;
         this._digestTemplateMagicExpressions(constructor.mode);
@@ -1757,8 +1805,13 @@ export class CivComponent extends EventEmitter {
         });
     }
 }
-
+Reflect.set(CivComponent, SYM_CIV_COMPONENT, true);
+Object.assign(CivComponent.prototype, EventEmitter.prototype);
 Object.assign(CivComponent.prototype, mixins);
+
+export function isCivComponent(obj: any): obj is CivComponent {
+    return obj.constructor?.[SYM_CIV_COMPONENT] || false;
+}
 
 function attachRoutine(this: CivComponent, sub: Node) {
     if (sub.isConnected) {
@@ -2015,5 +2068,14 @@ export function ResolveComponents(mappings: Record<string, typeof CivComponent>)
         } else {
             target.components = { ...mappings };
         }
+    }
+}
+
+export function CustomElement(tagName: string) {
+    return function (target: CustomElementConstructor) {
+        if (typeof target !== 'function') {
+            throw new TypeError("CustomElement decorator is intended for class constructors, not for class instances.");
+        }
+        customElements.define(tagName, target);
     }
 }
