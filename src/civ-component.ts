@@ -20,7 +20,7 @@ import { ReactiveAttrMixin, setupAttrObserver } from "./lib/attr";
 import { EVENT_EMITTER_REVOKERS, EventEmitter } from "./lib/event-emitter";
 import { perNextTick } from "./lib/tick";
 import { unwrap } from "./lib/reactive-kit";
-import { isPrimitiveLike } from "./lib/lang";
+import { isPrimitiveLike, mixin } from "./lib/lang";
 import { CivFeError } from "./error";
 import { mixins } from "./mixins";
 
@@ -74,15 +74,15 @@ export class CivComponent extends EventTarget {
     protected __element?: Element;
 
     protected __shadowRoot?: ShadowRoot;
-    protected _pendingTasks: DomMaintenanceTask[] = [];
-    protected _pendingConstructions: Map<DomConstructionTask | DomMaintenanceTask, DomConstructionTask> = new Map();
+    protected _pendingTasks: DomMaintenanceTask[];
+    protected _pendingConstructions: Map<DomConstructionTask | DomMaintenanceTask, DomConstructionTask>;
     protected _signal: AbortSignal;
-    protected _revokers: Set<AbortController> = new Set();
+    protected _revokers: Set<AbortController>;
     protected _subtreeRenderTaskTrack?: WeakMap<SubtreeRenderTask, TrieNode<object, Element>>;
     protected _placeHolderElementToTasksMap?: WeakMap<Element, Set<DomMaintenanceTask>>;
-    protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element> = new WeakMap();
-    protected _taskToRevokerMap: WeakMap<DomMaintenanceTask, AbortController> = new WeakMap();
-    protected _subtreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>> = new WeakMap();
+    protected _taskToHostElementMap: WeakMap<DomMaintenanceTask, Element>;
+    protected _taskToRevokerMap: WeakMap<DomMaintenanceTask, AbortController>;
+    protected _subtreeTaskTrack: WeakMap<Element, Set<DomMaintenanceTask>>;
     protected _nextFrameRecept?: ReturnType<typeof requestAnimationFrame>;
 
     static customElement<T extends HTMLElement = HTMLElement>(extendsCls: { new(): T; prototype: T; } = HTMLElement as any): {
@@ -97,6 +97,12 @@ export class CivComponent extends EventTarget {
         class cls extends extendsCls {
             constructor() {
                 super();
+                this._pendingTasks = [];
+                this._pendingConstructions = new Map();
+                this._revokers = new Set();
+                this._taskToHostElementMap = new WeakMap();
+                this._taskToRevokerMap = new WeakMap();
+                this._subtreeTaskTrack = new WeakMap();
                 this[EVENT_EMITTER_REVOKERS] = new Map();
                 Reflect.apply(initReactivity, this, []);
                 const constructor = this.constructor as typeof CivComponent;
@@ -121,7 +127,7 @@ export class CivComponent extends EventTarget {
             }
         }
         Object.assign(cls, this);
-        Object.assign(cls.prototype, this.prototype);
+        mixin(cls.prototype, this.prototype);
         Object.defineProperty(cls, 'name', { value: `Civ${extendsCls.name}`, configurable: true, writable: false });
         CIV_ELEMENT_CLS_CACHE.set(extendsCls, cls as any);
 
@@ -130,6 +136,12 @@ export class CivComponent extends EventTarget {
 
     constructor() {
         super();
+        this._pendingTasks = [];
+        this._pendingConstructions = new Map();
+        this._revokers = new Set();
+        this._taskToHostElementMap = new WeakMap();
+        this._taskToRevokerMap = new WeakMap();
+        this._subtreeTaskTrack = new WeakMap();
         this[EVENT_EMITTER_REVOKERS] = new Map();
         Reflect.apply(initReactivity, this, []);
         const constructor = this.constructor as typeof CivComponent;
@@ -1806,8 +1818,8 @@ export class CivComponent extends EventTarget {
     }
 }
 Reflect.set(CivComponent, SYM_CIV_COMPONENT, true);
-Object.assign(CivComponent.prototype, EventEmitter.prototype);
-Object.assign(CivComponent.prototype, mixins);
+mixin(CivComponent.prototype, EventEmitter.prototype);
+mixin(CivComponent.prototype, mixins);
 
 export function isCivComponent(obj: any): obj is CivComponent {
     return obj.constructor?.[SYM_CIV_COMPONENT] || false;
