@@ -127,6 +127,7 @@ export class CivComponent extends EventTarget {
             }
         }
         Object.assign(cls, this);
+        Reflect.set(cls, 'mode', 'shadow');
         mixin(cls.prototype, this.prototype);
         Object.defineProperty(cls, 'name', { value: `Civ${extendsCls.name}`, configurable: true, writable: false });
         CIV_ELEMENT_CLS_CACHE.set(extendsCls, cls as any);
@@ -391,8 +392,8 @@ export class CivComponent extends EventTarget {
                 }
 
                 const exprFn = new Function(
-                    `with(this) { 
-                        with(arguments[0]) { 
+                    `with(this) {
+                        with(arguments[0]) {
                             return [${parsed.map((x) => x.type === 'expression' ? x.value : JSON.stringify(x.value)).join(', ')}];
                             }
                         }`) as ExprFn;
@@ -567,7 +568,7 @@ export class CivComponent extends EventTarget {
     }
 
     protected _renderTemplateElem(inputElem?: Element, ns?: Record<string, unknown>) {
-        const host = inputElem ?? (this.__shadowRoot || this.__element);
+        const host = inputElem ?? (this.__shadowRoot || this.element);
         if (!host) {
             throw new Error('Unexpected condition: host node unidentified');
         }
@@ -846,7 +847,7 @@ export class CivComponent extends EventTarget {
 
     protected _evaluateExpr(expr: string, ns: Record<string, unknown> = Object.create(null), noListen?: unknown, assignment?: unknown) {
         if (!expr) {
-            return { value: expr, vecs: [] }
+            return { value: expr, vecs: [] };
         }
         const fn = this._expressionMap.get(expr);
         if (!fn) {
@@ -1911,7 +1912,7 @@ function detachRoutine(this: CivComponent, sub: Node, dispose?: boolean) {
             if (dispose) {
                 (comp[Symbol.dispose] || comp[Symbol.asyncDispose])?.call(comp);
             }
-        }
+        };
         hdl(sub);
         sub.querySelectorAll(`.${componentFlagClass}`).forEach(hdl);
     }
@@ -2021,7 +2022,7 @@ function CSSStyleDeclarationSync(task: SetPropTask) {
     if (Array.isArray(val)) {
         style.cssText = val.map((x) => {
             const txt = `${x}`.trim();
-            return txt.endsWith(';') ? txt : `${txt};`
+            return txt.endsWith(';') ? txt : `${txt};`;
         }).join('\n');
         return;
     }
@@ -2080,14 +2081,14 @@ export function ResolveComponents(mappings: Record<string, typeof CivComponent>)
         } else {
             target.components = { ...mappings };
         }
-    }
+    };
 }
 
-export function CustomElement(tagName: string) {
+export function CustomElement(tagName: string, iExtends?: string) {
     return function (target: CustomElementConstructor) {
         if (typeof target !== 'function') {
             throw new TypeError("CustomElement decorator is intended for class constructors, not for class instances.");
         }
-        customElements.define(tagName, target);
-    }
+        customElements.define(tagName, target, { extends: iExtends });
+    };
 }
