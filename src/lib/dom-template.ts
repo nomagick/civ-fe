@@ -9,7 +9,12 @@ export interface ReactiveTemplateMixin {
     new(...args: unknown[]): unknown;
     [REACTIVE_TEMPLATE_IDENTIFIER]?: string;
     [REACTIVE_TEMPLATE_DOM]?: Document;
-    [REACTIVE_TEMPLATE_SHEET]?: CSSStyleSheet;
+    [REACTIVE_TEMPLATE_SHEET]?: {
+        text: string;
+        isGlobal?: boolean;
+        sheet?: CSSStyleSheet;
+        scopedText?: string;
+    };
 }
 
 export function identify(target: ReactiveTemplateMixin, reIdentity?: any): string {
@@ -53,7 +58,7 @@ export function SVG(text: string) {
             throw new TypeError("SVG decorator is intended for classes themselves.");
         }
         identify(target);
-        
+
         let doc: Document;
 
         const isSnippet = !text.slice(0, 4).toLowerCase().startsWith('<svg');
@@ -96,32 +101,38 @@ export function XHTML(text: string) {
     };
 }
 
-export function mangleSelectorText(cssRules: CSSRuleList, identifier: string): void {
+export function mangleSelectorText(cssRules: CSSRuleList, direction: 'toScoped' | 'toShadow' = 'toScoped'): void {
     for (let i = 0; i < cssRules.length; i++) {
         const rule = cssRules[i];
         if (rule instanceof CSSGroupingRule) {
-            mangleSelectorText(rule.cssRules, identifier);
+            mangleSelectorText(rule.cssRules, direction);
+            continue;
+        }
+        if (rule instanceof CSSKeyframesRule) {
+            mangleSelectorText(rule.cssRules, direction);
             continue;
         }
         if (rule instanceof CSSStyleRule) {
-            rule.selectorText = rule.selectorText
-                .replace(/:host\(/g, `.${identifier}:is(`)
-                .replace(/:host/g, `.${identifier}`)
-                .replace(/::slotted\(/g, `.${identifier}__slotted :is(`);
+            if (direction === 'toScoped') {
+                rule.selectorText = rule.selectorText
+                    .replace(/:host\(/g, `:scope:is(`)
+                    .replace(/:host/g, `:scope`);
+            } else if (direction === 'toShadow') {
+                rule.selectorText = rule.selectorText
+                    .replace(/:scope/g, `:host`);
+            }
         }
     }
 }
 
-export function CSS(text: string) {
+export function CSS(text: string, isGlobal: boolean = false) {
     return function <T extends ReactiveTemplateMixin>(target: T) {
         if (typeof target !== 'function') {
             throw new TypeError("CSS decorator is intended for classes themselves.");
         }
         identify(target, !target.hasOwnProperty(REACTIVE_TEMPLATE_IDENTIFIER));
-        const sheet = new CSSStyleSheet();
-        sheet.replaceSync(text);
 
-        Reflect.set(target.prototype, REACTIVE_TEMPLATE_SHEET, sheet);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_SHEET, { text, isGlobal });
     };
 }
 

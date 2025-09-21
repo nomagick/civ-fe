@@ -1,5 +1,5 @@
 import { TrieRouter } from './lib/trie-router';
-import { CivComponent } from './civ-component';
+import { CivComponent, isCivComponent } from './civ-component';
 import { runOncePerInstance } from './lib/once';
 import { DomConstructionTaskType, NodeGroupToggleTask } from './dom';
 import { setImmediate } from 'lib/lang';
@@ -145,9 +145,9 @@ export abstract class CivRouter extends CivComponent {
         };
 
         const renderComp = async (component: ComponentType) => {
-            if (component instanceof CivComponent) {
+            if (isCivComponent(component)) {
                 this.current!.component = component;
-            } else if ((component as typeof CivComponent).prototype instanceof CivComponent || component === CivComponent) {
+            } else if (isCivComponent((component as typeof CivComponent).prototype) || component === CivComponent) {
                 this.current!.component = Reflect.construct(component as typeof CivComponent, []);
             } else {
                 throw new Error(`Invalid component type for route: ${typeof component}`);
@@ -175,7 +175,7 @@ export abstract class CivRouter extends CivComponent {
 
         let loadProcedure: () => Promise<CivComponent | typeof CivComponent> = () => Promise.resolve(route.component as CivComponent | typeof CivComponent);
 
-        if (typeof route.component === 'function' && !((route.component as typeof CivComponent).prototype instanceof CivComponent)) {
+        if (typeof route.component === 'function' && !isCivComponent((route.component as typeof CivComponent).prototype)) {
             loadProcedure = () => {
                 return (route.component as CustomRouteFunction).call(this, this.current!);
             };
@@ -183,7 +183,7 @@ export abstract class CivRouter extends CivComponent {
             loadProcedure = async () => {
                 const result = (await import(route.component as string)).default;
 
-                if (typeof result === 'function' && !((result as typeof CivComponent).prototype instanceof CivComponent)) {
+                if (typeof result === 'function' && !isCivComponent((result as typeof CivComponent).prototype)) {
                     return (result as CustomRouteFunction).call(this, this.current!);
                 }
 

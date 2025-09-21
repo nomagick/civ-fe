@@ -53,9 +53,10 @@ const placeHolderElementToRealElementMap: WeakMap<Node, Node> = new WeakMap();
 export const SYM_CIV_COMPONENT = Symbol('CivComponent');
 
 const CIV_ELEMENT_CLS_CACHE = new WeakMap();
+const CIV_SCOPED_SHEET_CACHE = new WeakMap<typeof CivComponent, CSSStyleSheet>();
 
 export class CivComponent extends EventTarget {
-    static mode: string = 'dom';
+    static mode: string = 'auto'; // auto | dom | shadow
     static components: Record<string, typeof CivComponent> = {};
     static customElementRegistry: CustomElementRegistry = customElements;
     static expressionMap: Map<string, ExprFn> = new Map();
@@ -127,7 +128,10 @@ export class CivComponent extends EventTarget {
             }
         }
         Object.assign(cls, this);
-        Reflect.set(cls, 'mode', 'shadow');
+        if (extendsCls !== HTMLElement) {
+            const elementName = extendsCls.name.slice('HTML'.length, -('Element'.length)).toLowerCase();
+            Reflect.set(cls, SYM_CIV_COMPONENT, elementName);
+        }
         mixin(cls.prototype, this.prototype);
         Object.defineProperty(cls, 'name', { value: `Civ${extendsCls.name}`, configurable: true, writable: false });
         CIV_ELEMENT_CLS_CACHE.set(extendsCls, cls as any);
@@ -172,7 +176,11 @@ export class CivComponent extends EventTarget {
 
         const sheet = this[REACTIVE_TEMPLATE_SHEET];
         if (sheet) {
-            this.__shadowRoot!.adoptedStyleSheets.push(sheet);
+            if (!sheet.sheet) {
+                sheet.sheet = new CSSStyleSheet();
+                sheet.sheet.replaceSync(sheet.text);
+            }
+            this.__shadowRoot!.adoptedStyleSheets.push(sheet.sheet);
         }
 
         return this.__shadowRoot!;
@@ -205,7 +213,8 @@ export class CivComponent extends EventTarget {
         }
 
         if (this.__shadowRoot) {
-            el.childNodes.forEach((n) => targetElement.appendChild(n));
+            // @ts-ignore
+            targetElement.append(...el.childNodes);
         } else {
             // "class" attribute could have been replaced, loosing class identifier, adding it back here
             this.element.classList.add(clsId);
@@ -215,7 +224,7 @@ export class CivComponent extends EventTarget {
             }
             const defaultSlot = targetElement.querySelector<HTMLElement>('slot:not([name])');
             if (defaultSlot) {
-                defaultSlot.classList.add(`${clsId}__slotted`);
+                // defaultSlot.classList.add(`${clsId}__slotted`);
                 const nodes: Node[] = [];
                 el.childNodes.forEach((node) => {
                     nodes.push(node);
@@ -234,7 +243,7 @@ export class CivComponent extends EventTarget {
                 if (!targetSlot) {
                     return;
                 }
-                targetSlot.classList.add(`${clsId}__slotted`);
+                // targetSlot.classList.add(`${clsId}__slotted`);
                 targetSlot.replaceChildren(template);
             });
         }
@@ -351,7 +360,11 @@ export class CivComponent extends EventTarget {
                 dom.documentElement.removeAttributeNode(attr);
             }
         }
-
+        const slotPresent = dom.querySelector('slot') !== null;
+        if (mode === 'auto') {
+            mode = (this instanceof HTMLElement && (slotPresent || typeof Reflect.get(constructor, SYM_CIV_COMPONENT) !== 'string')) ? 'shadow' : 'dom';
+            Reflect.set(constructor, 'mode', mode);
+        }
         const walker = dom.createTreeWalker(dom.documentElement, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, (elem) => {
             if (elem instanceof Text) {
                 if (elem.textContent?.includes('{{') && elem.textContent.includes('}}')) {
@@ -474,10 +487,38 @@ export class CivComponent extends EventTarget {
             elemTraitsLookup.set(sn, v);
         }
         const sheet = this[REACTIVE_TEMPLATE_SHEET];
-        if (sheet) {
-            if (mode === 'dom') {
-                mangleSelectorText(sheet.cssRules, identify(constructor));
-                document.adoptedStyleSheets.push(sheet);
+        if (sheet && mode === 'dom') {
+            if (!sheet.scopedText) {
+                const tempSheet = new CSSStyleSheet();
+                tempSheet.replaceSync(sheet.text);
+                mangleSelectorText(tempSheet.cssRules, 'toScoped');
+                const cssTexts: string[] = [];
+                for (const cssRule of tempSheet.cssRules) {
+                    cssTexts.push(cssRule.cssText);
+                }
+                sheet.scopedText = cssTexts.join('\n');
+            }
+            let scopedSheet = CIV_SCOPED_SHEET_CACHE.get(constructor);
+            if (!scopedSheet) {
+                scopedSheet = new CSSStyleSheet();
+                const customElementName = constructor.customElementRegistry.getName(constructor as any);
+                let selector = Reflect.get(constructor, SYM_CIV_COMPONENT);
+                if (typeof selector !== 'string') {
+                    selector = customElementName;
+                } else {
+                    if (!customElementName) {
+                        throw new Error(`Component ${identify(constructor)} is defined to extend ${selector}, but not registered as custom element.`);
+                    }
+                    selector = `${selector}[is="${customElementName}"]`;
+                }
+                if (!selector) {
+                    selector = `.${identify(constructor)}`;
+                }
+                scopedSheet.replaceSync(`@scope (${selector}) {\n${sheet.scopedText}\n}\n`);
+                CIV_SCOPED_SHEET_CACHE.set(constructor, scopedSheet);
+            }
+            if (!document.adoptedStyleSheets.includes(scopedSheet)) {
+                document.adoptedStyleSheets.push(scopedSheet);
             }
         }
         if (generatorExpressionMap.size) {
@@ -487,13 +528,23 @@ export class CivComponent extends EventTarget {
 
     protected _activateTemplate(mode: string) {
         const tplDom = this[REACTIVE_TEMPLATE_DOM];
+        const constructor = this.constructor as typeof CivComponent;
         if (!tplDom) {
             if (this instanceof Element) {
+                if (this.__shadowRoot) {
+                    return;
+                }
+                const registeredName = constructor.customElementRegistry.getName(constructor as any);
+                if (registeredName) {
+                    this.setAttribute('is', registeredName);
+                } else {
+                    this.classList.add(identify(constructor));
+                }
                 return;
             }
             if (mode === 'dom') {
                 const elem = document.createElement(`div`);
-                elem.classList.add(identify(this.constructor as typeof CivComponent));
+                elem.classList.add(identify(constructor));
                 this.__element = elem;
             } else if (mode === 'shadow') {
                 const elem = document.createElement(`div`);
@@ -508,9 +559,9 @@ export class CivComponent extends EventTarget {
             if (tplDom instanceof XMLDocument) {
                 tgt.append(document.importNode(tplDom.documentElement, true));
             } else if (tplDom.body.firstChild) {
-                tplDom.body.childNodes.forEach((x) => {
+                for (const x of tplDom.body.childNodes) {
                     tgt.append(document.importNode(x, true));
-                });
+                }
             } else {
                 tgt.append(document.importNode(tplDom.head, true));
             }
@@ -797,12 +848,12 @@ export class CivComponent extends EventTarget {
                         if (hasPlainTrait) {
                             break;
                         }
-                        el.childNodes.forEach((node) => {
+                        for (const node of el.childNodes) {
                             if (!(node instanceof Text)) {
-                                return;
+                                continue;
                             }
                             if (!node.textContent) {
-                                return;
+                                continue;
                             }
 
                             if (expressionMap.has(node.textContent)) {
@@ -813,7 +864,7 @@ export class CivComponent extends EventTarget {
                                     ns,
                                 }, elem);
                             }
-                        });
+                        }
 
                         break;
                     }
@@ -1202,7 +1253,7 @@ export class CivComponent extends EventTarget {
                 case 'checkbox': {
                     if (!listenerAddedForTask.has(task)) {
                         el.addEventListener('change', (e: Event) => {
-                            const target = e.target as HTMLInputElement;
+                            const target = this.getEventTarget<HTMLInputElement>(e);
                             if (target.value === 'on') {
                                 this._evaluateExpr(task.expr, task.ns, true, target.checked);
                             } else {
@@ -1237,7 +1288,7 @@ export class CivComponent extends EventTarget {
                 case 'radio': {
                     if (!listenerAddedForTask.has(task)) {
                         el.addEventListener('change', (e: Event) => {
-                            const target = e.target as HTMLInputElement;
+                            const target = this.getEventTarget<HTMLInputElement>(e);
                             const equiv = target.value === 'on' ? target.checked : target.value;
                             this._evaluateExpr(task.expr, task.ns, true, equiv);
                         }, { signal: this._signal });
@@ -1259,7 +1310,7 @@ export class CivComponent extends EventTarget {
                 case 'file': {
                     if (!listenerAddedForTask.has(task)) {
                         el.addEventListener('change', (e: Event) => {
-                            const target = e.target as HTMLInputElement;
+                            const target = this.getEventTarget<HTMLInputElement>(e);
                             this._evaluateExpr(task.expr, task.ns, true, Array.from(target.files || []));
                         }, { signal: this._signal });
                         listenerAddedForTask.add(task);
@@ -1271,7 +1322,7 @@ export class CivComponent extends EventTarget {
                 case 'number': {
                     if (!listenerAddedForTask.has(task)) {
                         el.addEventListener('change', (e: Event) => {
-                            const target = e.target as HTMLInputElement;
+                            const target = this.getEventTarget<HTMLInputElement>(e);
                             this._evaluateExpr(task.expr, task.ns, true, target.valueAsNumber);
                         }, { signal: this._signal });
                         listenerAddedForTask.add(task);
@@ -1293,7 +1344,7 @@ export class CivComponent extends EventTarget {
                 case 'date': {
                     if (!listenerAddedForTask.has(task)) {
                         el.addEventListener('change', (e: Event) => {
-                            const target = e.target as HTMLInputElement;
+                            const target = this.getEventTarget<HTMLInputElement>(e);
                             this._evaluateExpr(task.expr, task.ns, true, target.valueAsDate);
                         }, { signal: this._signal });
                         listenerAddedForTask.add(task);
@@ -1310,7 +1361,7 @@ export class CivComponent extends EventTarget {
                 default: {
                     if (!listenerAddedForTask.has(task)) {
                         const hdl = (e: Event) => {
-                            const target = e.target as HTMLInputElement;
+                            const target = this.getEventTarget<HTMLInputElement>(e);
                             this._evaluateExpr(task.expr, task.ns, true, target.value);
                         };
                         el.addEventListener('change', hdl, { signal: this._signal });
@@ -1330,7 +1381,7 @@ export class CivComponent extends EventTarget {
             if (el.multiple) {
                 if (!listenerAddedForTask.has(task)) {
                     el.addEventListener('change', (e: Event) => {
-                        const target = e.target as HTMLSelectElement;
+                        const target = this.getEventTarget<HTMLSelectElement>(e);
                         const { value } = this._evaluateExpr(task.expr, task.ns, true);
                         if (Array.isArray(value)) {
                             value.length = 0;
@@ -1351,7 +1402,7 @@ export class CivComponent extends EventTarget {
             } else {
                 if (!listenerAddedForTask.has(task)) {
                     el.addEventListener('change', (e: Event) => {
-                        const target = e.target as HTMLSelectElement;
+                        const target = this.getEventTarget<HTMLSelectElement>(e);
                         this._evaluateExpr(task.expr, task.ns, true, target.value);
                     }, { signal: this._signal });
                     listenerAddedForTask.add(task);
@@ -1366,7 +1417,7 @@ export class CivComponent extends EventTarget {
         } else {
             if (!listenerAddedForTask.has(task)) {
                 const hdl = (e: Event) => {
-                    const target = e.target as HTMLInputElement;
+                    const target = this.getEventTarget<HTMLInputElement>(e);
                     this._evaluateExpr(task.expr, task.ns, true, target.value);
                 };
                 el.addEventListener('change', hdl, { signal: this._signal });
@@ -1481,10 +1532,27 @@ export class CivComponent extends EventTarget {
             if (preventDefault) {
                 e.preventDefault();
             }
-            if (targetSelf && e.target !== tgt) {
+            if (targetSelf && this.getEventTarget(e) !== tgt) {
                 return;
             }
             const ns = Object.create(task.ns || null);
+
+            if (e.composed) {
+                const origFunc = e.composedPath;
+                const composedPathSnapshot = e.composedPath();
+                Object.defineProperty(e, 'composedPath', {
+                    value: function () {
+                        const upstream = origFunc.call(this);
+                        if (!upstream.length) {
+                            return composedPathSnapshot;
+                        }
+                        return upstream;
+                    },
+                    writable: false,
+                    enumerable: false,
+                    configurable: true,
+                });
+            }
             ns.$event = e;
             ns.$element = task.tgt;
             const { value } = this._evaluateExpr(task.expr, ns, true);
@@ -2069,7 +2137,7 @@ export function ResolveComponents(mappings: Record<string, typeof CivComponent>)
         if (typeof target !== 'function') {
             throw new TypeError("ResolveComponents decorator is intended for class constructors, not for class instances.");
         }
-        if (!(target.prototype instanceof CivComponent)) {
+        if (!isCivComponent(target.prototype)) {
             throw new TypeError("ResolveComponents decorator is intended for sub-class of CivComponent.");
         }
 
@@ -2089,6 +2157,10 @@ export function CustomElement(tagName: string, iExtends?: string) {
         if (typeof target !== 'function') {
             throw new TypeError("CustomElement decorator is intended for class constructors, not for class instances.");
         }
-        customElements.define(tagName, target, { extends: iExtends });
+        let civComponentExtends = Reflect.get(target, SYM_CIV_COMPONENT);
+        if (civComponentExtends === true) {
+            civComponentExtends = undefined;
+        }
+        customElements.define(tagName, target, { extends: iExtends || civComponentExtends });
     };
 }
