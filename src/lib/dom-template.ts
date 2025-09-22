@@ -8,7 +8,10 @@ export const REACTIVE_TEMPLATE_SHEET = Symbol('REACTIVE_TEMPLATE_SHEET');
 export interface ReactiveTemplateMixin {
     new(...args: unknown[]): unknown;
     [REACTIVE_TEMPLATE_IDENTIFIER]?: string;
-    [REACTIVE_TEMPLATE_DOM]?: Document;
+    [REACTIVE_TEMPLATE_DOM]?: {
+        document: Document,
+        isElementTemplate?: boolean;
+    };
     [REACTIVE_TEMPLATE_SHEET]?: {
         text: string;
         isGlobal?: boolean;
@@ -36,7 +39,7 @@ export function identify(target: ReactiveTemplateMixin, reIdentity?: any): strin
     return nn;
 }
 
-export function HTML(text: string) {
+export function HTML(text: string, isElementTemplate?: boolean) {
     return function <T extends ReactiveTemplateMixin>(target: T) {
         if (typeof target !== 'function') {
             throw new TypeError("HTML decorator is intended for classes themselves.");
@@ -48,7 +51,7 @@ export function HTML(text: string) {
         if (!doc.body.firstElementChild && !doc.head.firstElementChild) {
             throw new Error("Invalid HTML template");
         }
-        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, { document: doc, isElementTemplate });
     };
 }
 
@@ -72,7 +75,7 @@ export function SVG(text: string) {
             doc = new DOMParser().parseFromString(text, 'image/svg+xml');
         }
 
-        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, { document: doc });
     };
 }
 
@@ -97,7 +100,7 @@ export function XHTML(text: string) {
 
         const doc = new DOMParser().parseFromString(text, 'application/xhtml+xml');
 
-        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, { document: doc });
     };
 }
 
@@ -158,6 +161,23 @@ export function Template(html: string | TypedString, css?: string) {
     };
 }
 
+export function ElementTemplate(html: string | TypedString, css?: string) {
+    return function <T extends ReactiveTemplateMixin>(target: T) {
+        if (typeof html === 'string') {
+            HTML(html, true)(target);
+        } else if (html.type === 'application/xhtml+xml') {
+            throw new Error("XHTML is not supported as Element template.");
+        } else if (html.type === 'image/svg+xml') {
+            throw new Error("SVG is not supported as Element template.");
+        } else {
+            HTML(html.value, true)(target);
+        }
+        if (css) {
+            CSS(css)(target);
+        }
+    };
+}
+
 
 // HTML no-op template formatter
 function _noop(strings: TemplateStringsArray, ...values: any[]): string {
@@ -199,5 +219,3 @@ export function svg(strings: TemplateStringsArray, ...values: any[]): TypedStrin
         type: 'image/svg+xml'
     };
 }
-
-

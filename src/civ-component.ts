@@ -350,7 +350,7 @@ export class CivComponent extends EventTarget {
         if (!Object.getPrototypeOf(this).hasOwnProperty(REACTIVE_TEMPLATE_DOM)) {
             return;
         }
-        const dom = this[REACTIVE_TEMPLATE_DOM];
+        const { document: dom } = this[REACTIVE_TEMPLATE_DOM] || {};
         if (!dom) {
             return;
         }
@@ -514,7 +514,7 @@ export class CivComponent extends EventTarget {
                 if (!selector) {
                     selector = `.${identify(constructor)}`;
                 }
-                scopedSheet.replaceSync(`@scope (${selector}) {\n${sheet.scopedText}\n}\n`);
+                scopedSheet.replaceSync(`@scope (${selector}, .${identify(constructor)}) {\n${sheet.scopedText}\n}\n`);
                 CIV_SCOPED_SHEET_CACHE.set(constructor, scopedSheet);
             }
             if (!document.adoptedStyleSheets.includes(scopedSheet)) {
@@ -527,7 +527,7 @@ export class CivComponent extends EventTarget {
     }
 
     protected _activateTemplate(mode: string) {
-        const tplDom = this[REACTIVE_TEMPLATE_DOM];
+        const { document: tplDom, isElementTemplate } = this[REACTIVE_TEMPLATE_DOM] || {};
         const constructor = this.constructor as typeof CivComponent;
         if (!tplDom) {
             if (this instanceof Element) {
@@ -558,6 +558,22 @@ export class CivComponent extends EventTarget {
             const tgt: Element | ShadowRoot = this.__shadowRoot || this as any;
             if (tplDom instanceof XMLDocument) {
                 tgt.append(document.importNode(tplDom.documentElement, true));
+            } else if (isElementTemplate) {
+                let el = tplDom.body.firstElementChild;
+                if (!el) {
+                    throw new Error("Element template must have a single root element.");
+                }
+                el = document.importNode(el, true);
+                const targetElement = this.element;
+                if (!(targetElement instanceof el.constructor)) {
+                    console.warn(`Root element in Element Template for ${identify(constructor)} does not match the host element.`);
+                }
+
+                for (const attr of el.attributes) {
+                    el.removeAttributeNode(attr);
+                    targetElement.setAttributeNode(attr);
+                }
+                tgt.append(...el.childNodes);
             } else if (tplDom.body.firstChild) {
                 for (const x of tplDom.body.childNodes) {
                     tgt.append(document.importNode(x, true));
