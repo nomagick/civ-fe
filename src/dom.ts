@@ -145,3 +145,151 @@ export interface NodeGroupToggleTask {
 
 export type DomConstructionTask = SetAttrTask | SetPropTask | NodeAttachTask |
     NodeDetachTask | NodeReplaceTask | NodeSequenceMangleTask | NodeGroupToggleTask;
+
+export const tagNameToClassMap = {
+    // Document structure
+    'html': HTMLHtmlElement,
+    'head': HTMLHeadElement,
+    'body': HTMLBodyElement,
+    'title': HTMLTitleElement,
+    'meta': HTMLMetaElement,
+    'link': HTMLLinkElement,
+    'style': HTMLStyleElement,
+    'script': HTMLScriptElement,
+    'base': HTMLBaseElement,
+
+    // Headings
+    'h1': HTMLHeadingElement,
+    'h2': HTMLHeadingElement,
+    'h3': HTMLHeadingElement,
+    'h4': HTMLHeadingElement,
+    'h5': HTMLHeadingElement,
+    'h6': HTMLHeadingElement,
+
+    // Content sections
+    'div': HTMLDivElement,
+    'span': HTMLSpanElement,
+    'p': HTMLParagraphElement,
+    'hr': HTMLHRElement,
+    'pre': HTMLPreElement,
+    'blockquote': HTMLQuoteElement,
+    'q': HTMLQuoteElement,
+
+    // Semantic elements
+    'address': HTMLElement,
+    'article': HTMLElement,
+    'aside': HTMLElement,
+    'footer': HTMLElement,
+    'header': HTMLElement,
+    'main': HTMLElement,
+    'nav': HTMLElement,
+    'section': HTMLElement,
+    'hgroup': HTMLElement,
+    'figure': HTMLElement,
+    'figcaption': HTMLElement,
+
+    // Text semantics
+    'br': HTMLBRElement,
+    'cite': HTMLElement,
+    'code': HTMLElement,
+    'em': HTMLElement,
+    'i': HTMLElement,
+    'kbd': HTMLElement,
+    'mark': HTMLElement,
+    's': HTMLElement,
+    'samp': HTMLElement,
+    'small': HTMLElement,
+    'strong': HTMLElement,
+    'sub': HTMLElement,
+    'sup': HTMLElement,
+    'time': HTMLTimeElement,
+    'u': HTMLElement,
+    'var': HTMLElement,
+    'wbr': HTMLElement,
+    'b': HTMLElement,
+    'bdi': HTMLElement,
+    'bdo': HTMLElement,
+    'dfn': HTMLElement,
+    'abbr': HTMLElement,
+
+    // Lists
+    'ul': HTMLUListElement,
+    'ol': HTMLOListElement,
+    'li': HTMLLIElement,
+    'dl': HTMLDListElement,
+    'dt': HTMLElement,
+    'dd': HTMLElement,
+
+    // Links and media
+    'a': HTMLAnchorElement,
+    'img': HTMLImageElement,
+    'area': HTMLAreaElement,
+    'map': HTMLMapElement,
+    'audio': HTMLAudioElement,
+    'video': HTMLVideoElement,
+    'source': HTMLSourceElement,
+    'track': HTMLTrackElement,
+    'embed': HTMLEmbedElement,
+    'object': HTMLObjectElement,
+    'param': HTMLParamElement,
+    'picture': HTMLPictureElement,
+
+    // Forms
+    'form': HTMLFormElement,
+    'input': HTMLInputElement,
+    'textarea': HTMLTextAreaElement,
+    'button': HTMLButtonElement,
+    'select': HTMLSelectElement,
+    'option': HTMLOptionElement,
+    'optgroup': HTMLOptGroupElement,
+    'label': HTMLLabelElement,
+    'fieldset': HTMLFieldSetElement,
+    'legend': HTMLLegendElement,
+    'datalist': HTMLDataListElement,
+    'output': HTMLOutputElement,
+    'progress': HTMLProgressElement,
+    'meter': HTMLMeterElement,
+
+    // Tables
+    'table': HTMLTableElement,
+    'caption': HTMLTableCaptionElement,
+    'col': HTMLTableColElement,
+    'colgroup': HTMLTableColElement,
+    'thead': HTMLTableSectionElement,
+    'tbody': HTMLTableSectionElement,
+    'tfoot': HTMLTableSectionElement,
+    'tr': HTMLTableRowElement,
+    'td': HTMLTableCellElement,
+    'th': HTMLTableCellElement,
+
+    // Interactive
+    'details': HTMLDetailsElement,
+    // 'summary': HTMLSummaryElement,
+    'dialog': HTMLDialogElement,
+    'menu': HTMLMenuElement,
+
+    // Web components
+    'slot': HTMLSlotElement,
+    'template': HTMLTemplateElement,
+
+    // Frames
+    'iframe': HTMLIFrameElement,
+
+    // Ruby annotations
+    'ruby': HTMLElement,
+    'rt': HTMLElement,
+    'rp': HTMLElement,
+
+    // Edits
+    'del': HTMLModElement,
+    'ins': HTMLModElement,
+
+    // Graphics
+    'canvas': HTMLCanvasElement,
+
+    // Data
+    'data': HTMLDataElement,
+
+    // Other elements that use HTMLElement
+    'noscript': HTMLElement,
+};

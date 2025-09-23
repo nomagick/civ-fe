@@ -32,7 +32,7 @@ export function identify(target: ReactiveTemplateMixin, reIdentity?: any): strin
 
     const thisSerial = serial++;
 
-    const nn = `${target.name}-${thisSerial.toString(16)}`;
+    const nn = `${target.name}-0x${thisSerial.toString(16)}`;
 
     Reflect.set(target, REACTIVE_TEMPLATE_IDENTIFIER, nn);
 

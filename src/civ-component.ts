@@ -566,7 +566,7 @@ export class CivComponent extends EventTarget {
                 el = document.importNode(el, true);
                 const targetElement = this.element;
                 if (!(targetElement instanceof el.constructor)) {
-                    console.warn(`Root element in Element Template for ${identify(constructor)} does not match the host element.`);
+                    console.warn(`Root element in Element Template for ${identify(constructor)} does not match the host element (${el.tagName} vs ${targetElement.tagName}).`);
                 }
 
                 for (const attr of el.attributes) {
