@@ -44,7 +44,8 @@ const stringProps = new Set([
 ]);
 
 const moveFunc: <T extends Node>(this: T, node: Node, anchor: Node | null) => T =
-    'moveBefore' in Element.prototype ? Element.prototype.moveBefore : Element.prototype.insertBefore as any;
+    // @ts-ignore
+    'moveBefore' in Element.prototype ? Element.prototype.moveBefore : Element.prototype.insertBefore;
 
 const listenerAddedForTask = new WeakSet<DomMaintenanceTask>();
 const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
@@ -1710,7 +1711,7 @@ export class CivComponent extends EventTarget {
                         let anchorNode: Node | null = start.nextSibling;
                         const nodeOffsetSnapshot = new Map<Node | null, number>();
                         let offset = 0;
-                        nodeOffsetSnapshot.set(start, offset++);
+                        nodeOffsetSnapshot.set(anchorNode, offset++);
 
                         const insertionActionPoints: [Node, Node | null, boolean, boolean][] = [];
                         const arrangedNodes = new WeakSet<Node>();
@@ -1779,7 +1780,7 @@ export class CivComponent extends EventTarget {
                                     // Moving the lingering nodes back to their original positions
                                     // Otherwise they are always at the bottom of the list, breaking animation/transition
                                     const thisOffset = nodeOffsetSnapshot.get(thisNode);
-                                    if (thisOffset) {
+                                    if (thisOffset !== undefined) {
                                         parent.insertBefore(thisNode, childNodes[baseOffset + thisOffset] || end);
                                     }
                                     continue;
