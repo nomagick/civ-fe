@@ -43,9 +43,8 @@ const stringProps = new Set([
     'lang', 'dir', 'id', 'style',
 ]);
 
-const moveFunc: <T extends Node>(this: T, node: Node, anchor: Node | null) => T =
-    // @ts-ignore
-    'moveBefore' in Element.prototype ? Element.prototype.moveBefore : Element.prototype.insertBefore;
+// @ts-ignore
+const moveFunc: <T extends Node>(this: T, node: Node, anchor: Node | null) => T = 'moveBefore' in Element.prototype ? Element.prototype.moveBefore : Element.prototype.insertBefore;
 
 const listenerAddedForTask = new WeakSet<DomMaintenanceTask>();
 const reactiveTargets: WeakMap<object, EventTarget> = new WeakMap();
