@@ -145,3 +145,4 @@ export interface NodeGroupToggleTask {
 
 export type DomConstructionTask = SetAttrTask | SetPropTask | NodeAttachTask |
     NodeDetachTask | NodeReplaceTask | NodeSequenceMangleTask | NodeGroupToggleTask;
+

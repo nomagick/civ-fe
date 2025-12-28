@@ -316,3 +316,10 @@ export const setImmediate = (function setImmediateFactory() {
         }
     };
 })();
+
+export function mixin(target: object, source: object) {
+    const pack = Object.getOwnPropertyDescriptors(source);
+    Reflect.deleteProperty(pack, 'constructor');
+
+    Object.defineProperties(target, pack);
+}

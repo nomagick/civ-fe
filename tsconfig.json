@@ -10,6 +10,8 @@
             "ESNext.Iterator",
             "ESNext.Disposable",
             "DOM",
+            "DOM.Iterable",
+            "DOM.AsyncIterable",
         ], /* Specify library files to be included in the compilation. */
         "allowJs": true,                       /* Allow javascript files to be compiled. */
         // "checkJs": true,                       /* Report errors in .js files. */

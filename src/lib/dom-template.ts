@@ -8,8 +8,16 @@ export const REACTIVE_TEMPLATE_SHEET = Symbol('REACTIVE_TEMPLATE_SHEET');
 export interface ReactiveTemplateMixin {
     new(...args: unknown[]): unknown;
     [REACTIVE_TEMPLATE_IDENTIFIER]?: string;
-    [REACTIVE_TEMPLATE_DOM]?: Document;
-    [REACTIVE_TEMPLATE_SHEET]?: CSSStyleSheet;
+    [REACTIVE_TEMPLATE_DOM]?: {
+        document: Document,
+        isElementTemplate?: boolean;
+    };
+    [REACTIVE_TEMPLATE_SHEET]?: {
+        text: string;
+        isGlobal?: boolean;
+        sheet?: CSSStyleSheet;
+        scopedText?: string;
+    };
 }
 
 export function identify(target: ReactiveTemplateMixin, reIdentity?: any): string {
@@ -24,14 +32,14 @@ export function identify(target: ReactiveTemplateMixin, reIdentity?: any): strin
 
     const thisSerial = serial++;
 
-    const nn = `${target.name}-${thisSerial.toString(16)}`;
+    const nn = `${target.name}-0x${thisSerial.toString(16)}`;
 
     Reflect.set(target, REACTIVE_TEMPLATE_IDENTIFIER, nn);
 
     return nn;
 }
 
-export function HTML(text: string) {
+export function HTML(text: string, isElementTemplate?: boolean) {
     return function <T extends ReactiveTemplateMixin>(target: T) {
         if (typeof target !== 'function') {
             throw new TypeError("HTML decorator is intended for classes themselves.");
@@ -43,7 +51,7 @@ export function HTML(text: string) {
         if (!doc.body.firstElementChild && !doc.head.firstElementChild) {
             throw new Error("Invalid HTML template");
         }
-        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, { document: doc, isElementTemplate });
     };
 }
 
@@ -53,7 +61,7 @@ export function SVG(text: string) {
             throw new TypeError("SVG decorator is intended for classes themselves.");
         }
         identify(target);
-        
+
         let doc: Document;
 
         const isSnippet = !text.slice(0, 4).toLowerCase().startsWith('<svg');
@@ -67,7 +75,7 @@ export function SVG(text: string) {
             doc = new DOMParser().parseFromString(text, 'image/svg+xml');
         }
 
-        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, { document: doc });
     };
 }
 
@@ -92,37 +100,42 @@ export function XHTML(text: string) {
 
         const doc = new DOMParser().parseFromString(text, 'application/xhtml+xml');
 
-        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, doc);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_DOM, { document: doc });
     };
 }
 
-function mangleSelectorText(cssRules: CSSRuleList, identifier: string): void {
+export function mangleSelectorText(cssRules: CSSRuleList, direction: 'toScoped' | 'toShadow' = 'toScoped'): void {
     for (let i = 0; i < cssRules.length; i++) {
         const rule = cssRules[i];
         if (rule instanceof CSSGroupingRule) {
-            mangleSelectorText(rule.cssRules, identifier);
+            mangleSelectorText(rule.cssRules, direction);
+            continue;
+        }
+        if (rule instanceof CSSKeyframesRule) {
+            mangleSelectorText(rule.cssRules, direction);
             continue;
         }
         if (rule instanceof CSSStyleRule) {
-            rule.selectorText = rule.selectorText
-                .replace(/:host\(/g, `.${identifier}:is(`)
-                .replace(/:host/g, `.${identifier}`)
-                .replace(/::slotted\(/g, `.${identifier}__slotted :is(`);
+            if (direction === 'toScoped') {
+                rule.selectorText = rule.selectorText
+                    .replace(/:host\(/g, `:scope:is(`)
+                    .replace(/:host/g, `:scope`);
+            } else if (direction === 'toShadow') {
+                rule.selectorText = rule.selectorText
+                    .replace(/:scope/g, `:host`);
+            }
         }
     }
 }
 
-export function CSS(text: string) {
+export function CSS(text: string, isGlobal: boolean = false) {
     return function <T extends ReactiveTemplateMixin>(target: T) {
         if (typeof target !== 'function') {
             throw new TypeError("CSS decorator is intended for classes themselves.");
         }
-        const identifier = identify(target, !target.hasOwnProperty(REACTIVE_TEMPLATE_IDENTIFIER));
-        const sheet = new CSSStyleSheet();
-        sheet.replaceSync(text);
-        mangleSelectorText(sheet.cssRules, identifier);
+        identify(target, !target.hasOwnProperty(REACTIVE_TEMPLATE_IDENTIFIER));
 
-        Reflect.set(target.prototype, REACTIVE_TEMPLATE_SHEET, sheet);
+        Reflect.set(target.prototype, REACTIVE_TEMPLATE_SHEET, { text, isGlobal });
     };
 }
 
@@ -141,6 +154,23 @@ export function Template(html: string | TypedString, css?: string) {
             SVG(html.value)(target);
         } else {
             HTML(html.value)(target);
+        }
+        if (css) {
+            CSS(css)(target);
+        }
+    };
+}
+
+export function ElementTemplate(html: string | TypedString, css?: string) {
+    return function <T extends ReactiveTemplateMixin>(target: T) {
+        if (typeof html === 'string') {
+            HTML(html, true)(target);
+        } else if (html.type === 'application/xhtml+xml') {
+            throw new Error("XHTML is not supported as Element template.");
+        } else if (html.type === 'image/svg+xml') {
+            throw new Error("SVG is not supported as Element template.");
+        } else {
+            HTML(html.value, true)(target);
         }
         if (css) {
             CSS(css)(target);
@@ -189,5 +219,3 @@ export function svg(strings: TemplateStringsArray, ...values: any[]): TypedStrin
         type: 'image/svg+xml'
     };
 }
-
-
