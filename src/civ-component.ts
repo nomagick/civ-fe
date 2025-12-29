@@ -172,7 +172,7 @@ export class CivComponent extends EventTarget {
 
     protected _attachShadow() {
         // @ts-ignore
-        this.__shadowRoot = this.attachShadow({ mode: 'open', registry: (this.constructor as typeof CivElement).customElementRegistry });
+        this.__shadowRoot = this.attachShadow({ mode: 'open', registry: this.constructor.customElementRegistry });
 
         const sheet = this[REACTIVE_TEMPLATE_SHEET];
         if (sheet) {

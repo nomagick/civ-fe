@@ -2,7 +2,7 @@ import { TrieRouter } from './lib/trie-router';
 import { CivComponent, isCivComponent } from './civ-component';
 import { runOncePerInstance } from './lib/once';
 import { DomConstructionTaskType, NodeGroupToggleTask } from './dom';
-import { setImmediate } from 'lib/lang';
+import { setImmediate } from './lib/lang';
 
 let serial = 0;
 

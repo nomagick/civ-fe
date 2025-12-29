@@ -63,7 +63,7 @@ export function ReactiveAttr<T extends ReactivityHost>() {
         }
 
         if (!target[REACTIVE_ATTR_MAPPING].hasOwnProperty(attrName)) {
-            target[REACTIVE_ATTR_MAPPING][attrName] = new Set<string>(...(target[REACTIVE_ATTR_MAPPING][attrName] || []));
+            target[REACTIVE_ATTR_MAPPING][attrName] = new Set<string>(target[REACTIVE_ATTR_MAPPING][attrName] || []);
         }
         target[REACTIVE_ATTR_MAPPING][attrName].add(key as string);
 
@@ -106,10 +106,10 @@ export function setupAttrObserver(this: ReactivityHost & ReactiveAttrMixin) {
                     if (this[REACTIVE_ATTR_MAPPING][attrName]) {
                         for (const key of this[REACTIVE_ATTR_MAPPING][attrName]) {
                             if (this.hasOwnProperty(key)) {
-                                Reflect.set(this[REACTIVE_KIT], key, v);
+                                Reflect.set(this[REACTIVE_KIT].proxy, key, v);
                             }
                         }
-                    }``
+                    }
                 }
             }
         });
