@@ -14,3 +14,6 @@ thumbs.db
 .vscode/
 .parcel-cache/
 examples/dist/
+coverage/
+*.log
+.swc/

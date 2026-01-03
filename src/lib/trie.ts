@@ -8,7 +8,10 @@ export class TrieNode<T = unknown, D = unknown> {
     children?: Map<T, TrieNode<T, D>>;
 
     get isLeaf() {
-        return this.children?.size === 0;
+        if (!this.children) {
+            return true;
+        }
+        return this.children.size === 0;
     }
 
     constructor(key: T, public payload?: D) {
