@@ -124,16 +124,16 @@ export function isMagicModel(name: string) {
     return name === `${pseudoNamespacePrefix}model` || name === 'v-model';
 }
 export function isMagicForAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}for` || name === `render:for` || name === 'v-for';
+    return name === `${pseudoNamespacePrefix}for` || name === `render:for` || name === 'v-for' || name === '*for';
 }
 export function isMagicIfAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}if` || name === `render:if` || name === 'v-if';
+    return name === `${pseudoNamespacePrefix}if` || name === `render:if` || name === 'v-if' || name === '*if';
 }
 export function isMagicElifAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}elif` || name === `render:elif` || name === 'v-else-if';
+    return name === `${pseudoNamespacePrefix}elif` || name === `render:elif` || name === 'v-else-if' || name === '*else-if';
 }
 export function isMagicElseAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}else` || name === `render:else` || name === 'v-else';
+    return name === `${pseudoNamespacePrefix}else` || name === `render:else` || name === 'v-else' || name === '*else';
 }
 export function isMagicHTMLAttr(name: string) {
     return name === `${pseudoNamespacePrefix}html` || name === `render:html` || name === 'v-html';
@@ -215,7 +215,10 @@ export function attrToTrait(attrName: string, expr: string): Traits[number] | un
 }
 
 export function isMagicForTemplateElement(elem: Element) {
-    return elem.hasAttribute(`${pseudoNamespacePrefix}for`) || elem.hasAttribute('v-for');
+    return elem.hasAttribute(`${pseudoNamespacePrefix}for`) ||
+        elem.hasAttribute('render:for') ||
+        elem.hasAttribute('v-for') ||
+        elem.hasAttribute('*for');
 }
 
 export const attachedEventName = `${pseudoNamespacePrefix}attached`;

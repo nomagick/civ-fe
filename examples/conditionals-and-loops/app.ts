@@ -7,11 +7,11 @@ import { CivComponent, Reactive, Template, css, html } from 'civ-fe';
     <button @click="list.pop()">Pop Number</button>
     <button @click="list.reverse()">Reverse List</button>
 
-    <ul v-if="show && list.length">
-        <li v-for="item of list">{{ item }}</li>
+    <ul *if="show && list.length">
+        <li *for="item of list">{{ item }}</li>
     </ul>
-    <p v-else-if="list.length">List is not empty, but hidden.</p>
-    <p v-else>List is empty.</p>
+    <p *else-if="list.length">List is not empty, but hidden.</p>
+    <p *else>List is empty.</p>
 </div>
 `)
 export default class ConditionalsAndLoops extends CivComponent {
