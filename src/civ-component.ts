@@ -3,7 +3,7 @@ import { INJECTED_NS_PREFIX, REACTIVE_TEMPLATE_DOM, REACTIVE_TEMPLATE_SHEET, Rea
 import { activateReactivity, initReactivity, REACTIVE_KIT, ReactivityHost } from "./lib/reactive";
 import {
     attachedEventName, detachEventName, moveEventName, movedEventName,
-    attrToTrait, componentFlagClass, isMagicForAttr, isMagicForTemplateElement,
+    attrToTrait, componentFlagClass, isMagicElifAttr, isMagicElseAttr, isMagicForAttr, isMagicForTemplateElement, isMagicIfAttr,
     significantFlagClass, subtreeTemplateFlagClass,
     Traits, EventHandlerTrait,
 } from "./protocol";
@@ -420,6 +420,7 @@ export class CivComponent extends EventTarget {
             }
             const elemTraits: Traits = [];
             const magicAttrs: Attr[] = [];
+            const structuralTraitAttrMap = new Map<'for' | 'if' | 'elif' | 'else', string>();
             if (Reflect.get(components, elem.tagName.toUpperCase())) {
                 elem.classList.add(componentFlagClass);
             }
@@ -433,7 +434,31 @@ export class CivComponent extends EventTarget {
                 if (!trait) {
                     continue;
                 }
-                elemTraits.push(trait);
+                const structuralTrait = isMagicForAttr(name) ? 'for' :
+                    isMagicIfAttr(name) ? 'if' :
+                        isMagicElifAttr(name) ? 'elif' :
+                            isMagicElseAttr(name) ? 'else' :
+                                undefined;
+                if (structuralTrait) {
+                    const existingTraitIndex = elemTraits.findIndex(([t]) => t === structuralTrait);
+                    if (existingTraitIndex !== -1) {
+                        const existingAttrName = structuralTraitAttrMap.get(structuralTrait) || '';
+                        const existingIsStarAlias = existingAttrName.startsWith('*');
+                        const currentIsStarAlias = name.startsWith('*');
+                        if (!existingIsStarAlias && currentIsStarAlias) {
+                            elemTraits[existingTraitIndex] = trait;
+                            structuralTraitAttrMap.set(structuralTrait, name);
+                        } else {
+                            magicAttrs.push(attr);
+                            continue;
+                        }
+                    } else {
+                        elemTraits.push(trait);
+                        structuralTraitAttrMap.set(structuralTrait, name);
+                    }
+                } else {
+                    elemTraits.push(trait);
+                }
                 magicAttrs.push(attr);
                 if (trait.length === 1 || !trait.includes(expr)) {
                     continue;
