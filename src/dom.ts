@@ -1,5 +1,5 @@
 import type { EventHandlerTrait, Traits } from "./protocol";
-import type { CivComponent } from "civ-component";
+import type { CivComponent } from "./civ-component";
 
 export enum DomMaintenanceTaskType {
     ATTR_SYNC = 'attrSync',

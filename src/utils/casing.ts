@@ -11,3 +11,14 @@ export function toKebabCase(className: string): string {
         // Remove leading/trailing hyphens
         .replace(/^-+|-+$/g, '');
 }
+
+
+const kebabRegex = /-([a-z])/gi;
+const transformFunction = function (g: string) { return g[1].toUpperCase(); };
+
+export function kebabCaseToCamelCase(kebabStr: string): string {
+    if (kebabStr.indexOf('-') === -1) {
+        return kebabStr;
+    }
+    return kebabStr.replace(kebabRegex, transformFunction);
+}

@@ -1,4 +1,4 @@
-import { toKebabCase } from '../../src/utils/casing';
+import { toKebabCase, kebabCaseToCamelCase } from '../../src/utils/casing';
 
 describe('toKebabCase', () => {
     it('should convert camelCase to kebab-case', () => {
@@ -92,6 +92,52 @@ describe('toKebabCase', () => {
     it('should handle numbers at start', () => {
         expect(toKebabCase('2ndPlace')).toBe('2-nd-place');
         expect(toKebabCase('1stItem')).toBe('1-st-item');
+    });
+});
+
+describe('kebabCaseToCamelCase', () => {
+    it('should convert kebab-case to camelCase', () => {
+        expect(kebabCaseToCamelCase('kebab-case')).toBe('kebabCase');
+        expect(kebabCaseToCamelCase('my-variable-name')).toBe('myVariableName');
+    });
+
+    it('should handle single words', () => {
+        expect(kebabCaseToCamelCase('hello')).toBe('hello');
+        expect(kebabCaseToCamelCase('world')).toBe('world');
+    });
+
+    it('should handle already camelCase strings', () => {
+        expect(kebabCaseToCamelCase('camelCase')).toBe('camelCase');
+        expect(kebabCaseToCamelCase('myVariableName')).toBe('myVariableName');
+    });
+
+    it('should handle leading hyphens (PascalCase)', () => {
+        expect(kebabCaseToCamelCase('-webkit-transform')).toBe('WebkitTransform');
+        expect(kebabCaseToCamelCase('-moz-border-radius')).toBe('MozBorderRadius');
+    });
+
+    it('should handle multiple consecutive hyphens', () => {
+        // Current implementation: /-([a-z])/gi
+        // "foo--bar" -> match "-b" -> "foo-Bar"
+        expect(kebabCaseToCamelCase('foo--bar')).toBe('foo-Bar');
+    });
+
+    it('should convert hyphens followed by numbers', () => {
+        expect(kebabCaseToCamelCase('version-2-update')).toBe('version-2Update');
+        expect(kebabCaseToCamelCase('html-5')).toBe('html-5');
+    });
+
+    it('should handle trailing hyphens', () => {
+        expect(kebabCaseToCamelCase('trailing-')).toBe('trailing-');
+    });
+
+    it('should handle empty string', () => {
+        expect(kebabCaseToCamelCase('')).toBe('');
+    });
+
+    it('should be case-insensitive for the character after hyphen', () => {
+        expect(kebabCaseToCamelCase('foo-bar')).toBe('fooBar');
+        expect(kebabCaseToCamelCase('foo-Bar')).toBe('fooBar');
     });
 });
 

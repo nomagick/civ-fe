@@ -1,3 +1,4 @@
+import { kebabCaseToCamelCase } from "./utils/casing";
 import { extractForLoopTokens } from "./utils/lang";
 
 
@@ -121,28 +122,28 @@ export function isMagicRefAttr(name: string) {
     return false;
 }
 export function isMagicModel(name: string) {
-    return name === `${pseudoNamespacePrefix}model` || name === 'v-model';
+    return name === `${pseudoNamespacePrefix}model` || name === `*model` || name === 'v-model';
 }
 export function isMagicForAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}for` || name === `render:for` || name === 'v-for';
+    return name === `${pseudoNamespacePrefix}for` || name === `*for` || name === `render:for` || name === 'v-for';
 }
 export function isMagicIfAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}if` || name === `render:if` || name === 'v-if';
+    return name === `${pseudoNamespacePrefix}if` || name === `*if` || name === `render:if` || name === 'v-if';
 }
 export function isMagicElifAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}elif` || name === `render:elif` || name === 'v-else-if';
+    return name === `${pseudoNamespacePrefix}elif` || name === `*elif` || name === `render:elif` || name === 'v-else-if';
 }
 export function isMagicElseAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}else` || name === `render:else` || name === 'v-else';
+    return name === `${pseudoNamespacePrefix}else` || name === `*else` || name === `render:else` || name === 'v-else';
 }
 export function isMagicHTMLAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}html` || name === `render:html` || name === 'v-html';
+    return name === `${pseudoNamespacePrefix}html` || name === `*html` || name === `render:html` || name === 'v-html';
 }
 export function isMagicBindAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}bind` || name === `render:text` || name === 'v-bind';
+    return name === `${pseudoNamespacePrefix}bind` || name === `*bind` || name === `render:text` || name === 'v-bind';
 }
 export function isMagicPlainAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}plain` || name === `render:plain` || name === 'v-pre';
+    return name === `${pseudoNamespacePrefix}plain` || name === `*plain` || name === `render:plain` || name === 'v-pre';
 }
 export const eventHandlerTraits = ['stop', 'prevent', 'self', 'capture', 'once', 'passive'] as const;
 export type EventHandlerTrait = typeof eventHandlerTraits[number];
@@ -167,21 +168,21 @@ export type Traits = [Trait, ...string[]][];
 export function attrToTrait(attrName: string, expr: string): Traits[number] | undefined {
     const parsedAttr = parseMagicAttr(attrName);
     if (parsedAttr) {
-        return ['attr', parsedAttr, expr] as const;
+        return ['attr', kebabCaseToCamelCase(parsedAttr), expr] as const;
     }
     const parsedProp = parseMagicProp(attrName);
     if (parsedProp) {
-        return ['prop', parsedProp, expr] as const;
+        return ['prop', kebabCaseToCamelCase(parsedProp), expr] as const;
     }
     const documentEvent = parseMagicDocumentEventHandler(attrName);
     if (documentEvent) {
         const [eventName, traits] = parseEventHandler(documentEvent);
-        return ['documentEvent', eventName, expr, ...traits] as const;
+        return ['documentEvent', kebabCaseToCamelCase(eventName), expr, ...traits] as const;
     }
     const parsedEvent = parseMagicEventHandler(attrName);
     if (parsedEvent) {
         const [eventName, traits] = parseEventHandler(parsedEvent);
-        return ['event', eventName, expr, ...traits] as const;
+        return ['event', kebabCaseToCamelCase(eventName), expr, ...traits] as const;
     }
     if (isMagicModel(attrName)) {
         return ['model', expr] as const;
