@@ -5,17 +5,17 @@ const API_URL = `https://api.github.com/repos/nomagick/civ-fe/commits?per_page=3
 @Template(html`
 <div>
     <h1>Latest Civ-FE Commits</h1>
-    <span v-for="branch of branches">
+    <span *for="branch of branches">
       <input type="radio"
         :id="branch"
         :value="branch"
         name="branch"
-        v-model="currentBranch">
+        *model="currentBranch">
       <label :for="branch">{{ branch }}</label>
     </span>
     <p>nomagick/civ-fe@{{ currentBranch }}</p>
-    <ul v-if="commits.length > 0">
-      <li v-for="{ html_url, sha, author, commit } of commits">
+    <ul *if="commits.length > 0">
+      <li *for="{ html_url, sha, author, commit } of commits">
         <a :href="html_url" target="_blank" class="commit">{{ sha.slice(0, 7) }}</a>
         - <span class="message">{{ truncate(commit.message) }}</span><br>
         by <span class="author">

@@ -122,28 +122,28 @@ export function isMagicRefAttr(name: string) {
     return false;
 }
 export function isMagicModel(name: string) {
-    return name === `${pseudoNamespacePrefix}model` || name === `*model` || name === 'v-model';
+    return name === `${pseudoNamespacePrefix}model` || name === `*model` || name === 'render:model';
 }
 export function isMagicForAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}for` || name === `*for` || name === `render:for` || name === 'v-for';
+    return name === `${pseudoNamespacePrefix}for` || name === `*for` || name === `render:for`;
 }
 export function isMagicIfAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}if` || name === `*if` || name === `render:if` || name === 'v-if';
+    return name === `${pseudoNamespacePrefix}if` || name === `*if` || name === `render:if`;
 }
 export function isMagicElifAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}elif` || name === `*elif` || name === `render:elif` || name === 'v-else-if';
+    return name === `${pseudoNamespacePrefix}elif` || name === `*elif` || name === `render:elif`;
 }
 export function isMagicElseAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}else` || name === `*else` || name === `render:else` || name === 'v-else';
+    return name === `${pseudoNamespacePrefix}else` || name === `*else` || name === `render:else`;
 }
 export function isMagicHTMLAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}html` || name === `*html` || name === `render:html` || name === 'v-html';
+    return name === `${pseudoNamespacePrefix}html` || name === `*html` || name === `render:html`;
 }
 export function isMagicBindAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}bind` || name === `*bind` || name === `render:text` || name === 'v-bind';
+    return name === `${pseudoNamespacePrefix}bind` || name === `*text` || name === `render:text`;
 }
 export function isMagicPlainAttr(name: string) {
-    return name === `${pseudoNamespacePrefix}plain` || name === `*plain` || name === `render:plain` || name === 'v-pre';
+    return name === `${pseudoNamespacePrefix}plain` || name === `*plain` || name === `render:plain`;
 }
 export const eventHandlerTraits = ['stop', 'prevent', 'self', 'capture', 'once', 'passive'] as const;
 export type EventHandlerTrait = typeof eventHandlerTraits[number];
@@ -216,7 +216,7 @@ export function attrToTrait(attrName: string, expr: string): Traits[number] | un
 }
 
 export function isMagicForTemplateElement(elem: Element) {
-    return elem.hasAttribute(`${pseudoNamespacePrefix}for`) || elem.hasAttribute('v-for');
+    return elem.hasAttribute(`${pseudoNamespacePrefix}for`) || elem.hasAttribute('*for');
 }
 
 export const attachedEventName = `${pseudoNamespacePrefix}attached`;

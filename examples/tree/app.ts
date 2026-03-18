@@ -15,16 +15,16 @@ type TreeModel = {
     @click="toggle"
     @dblclick="changeType">
     {{ model.name }}
-    <span v-if="isFolder">[{{ isOpen ? '-' : '+' }}]</span>
+    <span *if="isFolder">[{{ isOpen ? '-' : '+' }}]</span>
   </div>
-  <ul .style="{display: isOpen ? undefined : 'none'}" v-if="isFolder">
+  <ul .style="{display: isOpen ? undefined : 'none'}" *if="isFolder">
     <!--
       A component can recursively render itself using its
       "name" option (inferred from filename if using SFC)
     -->
     <TreeItem
       class="item"
-      v-for="model of model.children"
+      *for="model of model.children"
       .model="model">
     </TreeItem>
     <li class="add" @click="addChild">+</li>

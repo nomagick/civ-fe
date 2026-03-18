@@ -10,7 +10,7 @@ import { shuffle } from 'lodash-es';
   <button @click="shuffle">Shuffle</button>
 
   <ul class="container" use:transition-group="createTransitionGroup($element, {leaveTo: 'leave-to', leaveFrom: 'leave-from'})">
-    <li v-for="item of items" class="item">
+    <li *for="item of items" class="item">
       {{ item }}
       <button @click="remove(item)">x</button>
     </li>

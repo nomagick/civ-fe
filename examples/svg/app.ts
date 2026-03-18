@@ -44,7 +44,7 @@ export class AxisLabel extends CivComponent {
   <polygon :points="points"></polygon>
   <circle cx="100" cy="100" r="80"></circle>
   <AxisLabel
-    v-for="[index, stat] of stats.entries()"
+    *for="[index, stat] of stats.entries()"
     .stat="stat"
     .index="index"
     .total="stats.length"
@@ -75,15 +75,15 @@ export class PolyGraph extends CivComponent {
   </svg>
 
   <!-- controls -->
-  <div v-for="stat of stats">
+  <div *for="stat of stats">
     <label>{{stat.label}}</label>
-    <input type="range" v-model="stat.value" min="0" max="100">
+    <input type="range" *model="stat.value" min="0" max="100">
     <span>{{stat.value}}</span>
     <button @click="remove(stat)" class="remove">X</button>
   </div>
 
   <form id="add">
-    <input name="newlabel" v-model="newLabel">
+    <input name="newlabel" *model="newLabel">
     <button @click="add">Add a Stat</button>
   </form>
 

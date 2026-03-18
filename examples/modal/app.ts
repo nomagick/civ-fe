@@ -4,7 +4,7 @@ import { CivComponent, html, Reactive, Template, scss, ResolveComponents } from 
 
 @Template(
     html`
-<div v-if="show" class="modal-mask" use:transition="createTransition">
+<div *if="show" class="modal-mask" use:transition="createTransition">
   <div class="modal-container">
     <div class="modal-header">
       <slot name="header">default header</slot>

@@ -2,21 +2,21 @@ import { CivComponent, Reactive, Template, scss, html, unwrap, ResolveComponents
 
 
 @Template(html`
-<table v-if="filteredData.length">
+<table *if="filteredData.length">
   <thead>
     <tr>
-      <th v-for="key of columns"
+      <th *for="key of columns"
         @click="sortBy(key)"
         :class="{ active: sortKey == key }">
         {{ capitalize(key) }}
-        <span v-if="sortKey === key" class="arrow" :class="sortDirection > 0 ? 'arrow asc' : 'arrow dsc'">
+        <span *if="sortKey === key" class="arrow" :class="sortDirection > 0 ? 'arrow asc' : 'arrow dsc'">
         </span>
       </th>
     </tr>
   </thead>
   <tbody>
-    <tr v-for="entry of filteredData">
-      <td v-for="key of columns">
+    <tr *for="entry of filteredData">
+      <td *for="key of columns">
         {{entry[key]}}
       </td>
     </tr>
@@ -137,7 +137,7 @@ export class Grid extends CivComponent {
 @Template(html`
 <div>
     <form id="search">
-      Search <input name="query" v-model="searchQuery" />
+      Search <input name="query" *model="searchQuery" />
     </form>
     <DemoGrid
       .data="gridData"

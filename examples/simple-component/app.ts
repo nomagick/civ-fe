@@ -13,7 +13,7 @@ export class TodoItem extends CivComponent {
 @ResolveComponents({ TodoItem })
 @Template(html`
 <ol>
-    <TodoItem v-for="item of groceryList" prop:todo="item" />
+    <TodoItem *for="item of groceryList" prop:todo="item" />
 </ol>
 `)
 export default class SimpleComponent extends CivComponent {
